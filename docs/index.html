@@ -565,6 +565,7 @@
         </div>
       </a>
       <nav class="nav-links">
+        <a href="#demo">Live Demo 🎬</a>
         <a href="#philosophy">Philosophy</a>
         <a href="#gallery">Live Gallery</a>
         <a href="#specs">Specs & Security</a>
@@ -594,20 +595,23 @@
         하나의 <strong>살아 숨쉬는 우주(Universe)</strong>로 시각화합니다.
       </p>
       <div class="hero-ctas">
-        <a href="#quickstart" class="btn btn-primary" style="padding: 14px 28px; font-size: 1rem;">로컬에서 30초 만에 시작하기 →</a>
-        <a href="#gallery" class="btn btn-secondary" style="padding: 14px 28px; font-size: 1rem;">실제 화면 둘러보기</a>
+        <a href="#demo" class="btn btn-primary" style="padding: 14px 28px; font-size: 1rem;">3분 시연 영상 보기 🎬</a>
+        <a href="#quickstart" class="btn btn-secondary" style="padding: 14px 28px; font-size: 1rem;">로컬에서 30초 만에 시작하기 →</a>
       </div>
 
-      <!-- Hero Visual Showcase -->
-      <div class="hero-showcase">
+      <!-- 3-Minute Live Interactive Demo Video -->
+      <div id="demo" class="hero-showcase" style="margin-bottom: 2rem;">
         <div class="showcase-bar">
           <div class="dot dot-red"></div>
           <div class="dot dot-yellow"></div>
           <div class="dot dot-green"></div>
-          <div class="showcase-url">https://orbit.internal/orbit (60fps Canvas Universe)</div>
+          <div class="showcase-url">orbit-demo.mp4 · 3-Minute Full Feature Walkthrough (60fps HD)</div>
         </div>
-        <div class="hero-img-wrap">
-          <img src="images/09_orbit_canvas_populated.png" alt="Orbit Universe Canvas" onclick="openModal(this.src)">
+        <div class="hero-img-wrap" style="background:#000;">
+          <video controls autoplay muted loop playsinline style="width: 100%; height: auto; display: block;">
+            <source src="orbit-demo.mp4" type="video/mp4">
+            브라우저가 비디오 태그를 지원하지 않습니다.
+          </video>
         </div>
       </div>
     </div>

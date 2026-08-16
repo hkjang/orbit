@@ -16,7 +16,10 @@
   <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19.x-61DAFB.svg?logo=react" alt="React"></a>
   <a href="https://www.postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-16+-4169E1.svg?logo=postgresql" alt="PostgreSQL"></a>
   <a href="docs/index.html"><img src="https://img.shields.io/badge/Promo%20Page-GitHub%20Pages-purple.svg" alt="GitHub Pages"></a>
+  <a href="docs/orbit-demo.mp4"><img src="https://img.shields.io/badge/Demo%20Video-3--Min%20MP4-red.svg?logo=youtube" alt="Demo Video"></a>
 </p>
+
+> 🎬 **[3분 전체 기능 시연 비디오 (orbit-demo.mp4)](docs/orbit-demo.mp4)** 또는 **[인터랙티브 웹 홍보 페이지](docs/index.html)**에서 실제 구동 모습을 확인하실 수 있습니다.
 
 ---
 
