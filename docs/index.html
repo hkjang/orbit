@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   
   <!-- Primary SEO Meta Tags -->
-  <title>Orbit — Your relationships have gravity. | Personal Relationship Universe Platform</title>
-  <meta name="title" content="Orbit — Your relationships have gravity. | Personal Relationship Universe Platform">
+  <title>Orbit — Your relationships have gravity. | Personal Relationship Universe</title>
+  <meta name="title" content="Orbit — Your relationships have gravity. | Personal Relationship Universe">
   <meta name="description" content="사람들을 단순한 CRM 점수나 정적인 연락처로 다루지 않고, 나와 그 사람 사이의 중력(Gravity)과 거리, 기억의 흐름을 하나의 우주로 시각화하는 프라이빗 관계 관리 플랫폼.">
   <meta name="keywords" content="Orbit, Personal CRM, Relationship Universe, Canvas Physics, Collision Relaxation, Envelope Encryption, AES-256-GCM, Model Context Protocol, Streamable MCP, Keycloak OIDC, Go Monolith, Offline CRM, Private CRM, Relationship Intelligence">
   <meta name="author" content="Orbit Contributors">
@@ -172,66 +172,56 @@
       z-index: 0;
     }
 
-    /* Header */
+    /* Streamlined Minimal Header */
     header.site-header {
       position: sticky;
       top: 0;
       z-index: 100;
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      background: rgba(7, 9, 19, 0.88);
+      background: rgba(7, 9, 19, 0.92);
       border-bottom: 1px solid var(--border-color);
       padding: 0 1.25rem;
     }
     .header-inner {
-      max-width: 1280px;
+      max-width: 1180px;
       margin: 0 auto;
-      height: 68px;
+      height: 60px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 12px;
     }
     .brand-logo {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       text-decoration: none;
       color: #fff;
       flex-shrink: 0;
     }
     .brand-icon-svg {
-      width: 36px;
-      height: 36px;
-      filter: drop-shadow(0 0 12px rgba(162, 140, 255, 0.5));
+      width: 32px;
+      height: 32px;
+      filter: drop-shadow(0 0 10px rgba(162, 140, 255, 0.4));
     }
     .brand-title {
-      font-size: 1.2rem;
+      font-size: 1.15rem;
       font-weight: 800;
       letter-spacing: 0.08em;
     }
-    .brand-tagline {
-      font-size: 0.78rem;
-      color: var(--text-dim);
-      font-weight: 400;
-      margin-left: 6px;
-      display: none;
-    }
 
+    /* Clean Center Navigation */
     nav.nav-links {
       display: flex;
       align-items: center;
-      gap: 20px;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      padding: 4px 0;
+      gap: 18px;
+      padding: 0;
     }
-    nav.nav-links::-webkit-scrollbar { display: none; }
     nav.nav-links a {
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 500;
       white-space: nowrap;
       transition: color 0.2s ease;
@@ -241,24 +231,24 @@
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       flex-shrink: 0;
     }
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 9px 16px;
+      gap: 6px;
+      padding: 7px 14px;
       border-radius: var(--radius-sm);
-      font-size: 0.88rem;
+      font-size: 0.82rem;
       font-weight: 600;
       text-decoration: none;
       transition: all 0.2s ease;
       cursor: pointer;
       border: 1px solid transparent;
-      min-height: 40px;
-      touch-action: manipulation;
+      min-height: 34px;
+      white-space: nowrap;
     }
     .btn-primary {
       background: #f8fafc;
@@ -266,7 +256,7 @@
     }
     .btn-primary:hover {
       background: #fff;
-      box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.35);
       transform: translateY(-1px);
     }
     .btn-secondary {
@@ -281,7 +271,7 @@
 
     /* Container */
     .container {
-      max-width: 1240px;
+      max-width: 1180px;
       margin: 0 auto;
       padding: 0 1.25rem;
       position: relative;
@@ -290,7 +280,7 @@
 
     /* Hero Section */
     section.hero {
-      padding: 4.5rem 0 3.5rem;
+      padding: 4rem 0 3rem;
       text-align: center;
     }
     .hero-badge {
@@ -302,11 +292,11 @@
       background: rgba(162, 140, 255, 0.1);
       border: 1px solid rgba(162, 140, 255, 0.25);
       color: var(--accent-purple);
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
     .pulse-dot {
       width: 7px;
@@ -321,11 +311,11 @@
       50% { opacity: 0.4; transform: scale(0.85); }
     }
     .hero-headline {
-      font-size: clamp(2.1rem, 5.5vw, 4.2rem);
+      font-size: clamp(2rem, 5vw, 3.8rem);
       font-weight: 800;
       letter-spacing: -0.03em;
       line-height: 1.15;
-      margin-bottom: 1.25rem;
+      margin-bottom: 1.2rem;
       color: #fff;
     }
     .hero-headline em {
@@ -335,9 +325,9 @@
       -webkit-text-fill-color: transparent;
     }
     .hero-subhead {
-      font-size: clamp(0.95rem, 2vw, 1.2rem);
+      font-size: clamp(0.92rem, 2vw, 1.15rem);
       color: var(--text-muted);
-      max-width: 740px;
+      max-width: 720px;
       margin: 0 auto 2rem;
       line-height: 1.65;
     }
@@ -345,9 +335,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 12px;
+      gap: 10px;
       flex-wrap: wrap;
-      margin-bottom: 3.5rem;
+      margin-bottom: 3rem;
     }
 
     /* Hero Showcase & Video */
@@ -361,7 +351,7 @@
       overflow: hidden;
     }
     .showcase-bar {
-      height: 40px;
+      height: 38px;
       background: #0a0d1d;
       border-bottom: 1px solid var(--border-color);
       display: flex;
@@ -369,7 +359,7 @@
       padding: 0 14px;
       gap: 8px;
     }
-    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; }
     .dot-red { background: #ff5f56; }
     .dot-yellow { background: #ffbd2e; }
     .dot-green { background: #27c93f; }
@@ -395,26 +385,23 @@
       transition: transform 0.4s ease;
       cursor: pointer;
     }
-    .hero-img-wrap img:hover {
-      transform: scale(1.015);
-    }
 
     /* Section Heads */
     .section-head {
       text-align: center;
       max-width: 720px;
-      margin: 0 auto 3rem;
+      margin: 0 auto 2.5rem;
     }
     .eyebrow {
       color: var(--accent-purple);
       font-weight: 700;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .section-head h2 {
-      font-size: clamp(1.6rem, 3.5vw, 2.6rem);
+      font-size: clamp(1.5rem, 3.5vw, 2.4rem);
       font-weight: 800;
       letter-spacing: -0.02em;
       color: #fff;
@@ -422,24 +409,24 @@
     }
     .section-desc {
       color: var(--text-dim);
-      font-size: 0.95rem;
-      margin-top: 10px;
+      font-size: 0.92rem;
+      margin-top: 8px;
     }
 
     /* Philosophy / Features Grid */
     section.philosophy-section {
-      padding: 5rem 0;
+      padding: 4.5rem 0;
     }
     .cards-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 20px;
+      gap: 18px;
     }
     .feature-card {
       background: var(--bg-card);
       border: 1px solid var(--border-color);
       border-radius: var(--radius-md);
-      padding: 24px;
+      padding: 22px;
       transition: all 0.25s ease;
     }
     .feature-card:hover {
@@ -448,32 +435,32 @@
       transform: translateY(-3px);
     }
     .feature-icon {
-      font-size: 28px;
-      margin-bottom: 14px;
+      font-size: 26px;
+      margin-bottom: 12px;
     }
     .feature-card h3 {
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 700;
       margin-bottom: 8px;
       color: #fff;
     }
     .feature-card p {
       color: var(--text-muted);
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       line-height: 1.6;
     }
 
     /* Live Gallery Grid */
     section.gallery-section {
-      padding: 5rem 0;
+      padding: 4.5rem 0;
       background: rgba(13, 16, 34, 0.4);
       border-top: 1px solid var(--border-color);
       border-bottom: 1px solid var(--border-color);
     }
     .gallery-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
     }
     .gallery-card {
       background: var(--bg-card);
@@ -490,7 +477,7 @@
     }
     .gallery-thumb {
       width: 100%;
-      height: 190px;
+      height: 180px;
       overflow: hidden;
       background: #000;
     }
@@ -504,38 +491,38 @@
       transform: scale(1.05);
     }
     .gallery-info {
-      padding: 16px 18px;
+      padding: 14px 16px;
     }
     .gallery-info h4 {
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       font-weight: 600;
       margin-bottom: 4px;
       color: #fff;
     }
     .gallery-info p {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       color: var(--text-dim);
     }
 
     /* Technical Specs & Documentation Grid */
     section.tech-section {
-      padding: 5rem 0;
+      padding: 4.5rem 0;
     }
     .tech-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
     }
     .tech-box {
-      padding: 24px;
+      padding: 22px;
       border-radius: var(--radius-md);
       background: rgba(7, 9, 19, 0.7);
       border: 1px solid var(--border-color);
     }
     .tech-box h3 {
-      font-size: 1.1rem;
+      font-size: 1.08rem;
       font-weight: 700;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       color: #fff;
     }
     .tech-box ul {
@@ -544,9 +531,9 @@
     .tech-box li {
       position: relative;
       padding-left: 18px;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       color: var(--text-muted);
-      margin-bottom: 8px;
+      margin-bottom: 7px;
       line-height: 1.5;
     }
     .tech-box li::before {
@@ -559,7 +546,7 @@
 
     /* FAQ Section (AEO/SEO Optimized) */
     section.faq-section {
-      padding: 5rem 0;
+      padding: 4.5rem 0;
       background: rgba(13, 16, 34, 0.4);
       border-top: 1px solid var(--border-color);
     }
@@ -568,7 +555,7 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
     }
     .faq-item {
       background: var(--bg-card);
@@ -581,9 +568,9 @@
       border-color: rgba(162, 140, 255, 0.35);
     }
     .faq-question {
-      padding: 18px 22px;
+      padding: 16px 20px;
       font-weight: 600;
-      font-size: 1rem;
+      font-size: 0.95rem;
       color: #fff;
       cursor: pointer;
       display: flex;
@@ -595,7 +582,7 @@
     .faq-question::-webkit-details-marker { display: none; }
     .faq-question::after {
       content: '+';
-      font-size: 1.25rem;
+      font-size: 1.2rem;
       color: var(--accent-purple);
       transition: transform 0.2s ease;
     }
@@ -604,18 +591,18 @@
       transform: rotate(180deg);
     }
     .faq-answer {
-      padding: 0 22px 18px 22px;
+      padding: 0 20px 16px 20px;
       color: var(--text-muted);
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       line-height: 1.65;
       border-top: 1px solid rgba(255, 255, 255, 0.04);
       margin-top: 4px;
-      padding-top: 14px;
+      padding-top: 12px;
     }
 
     /* Quick Start Terminal */
     section.quickstart-section {
-      padding: 5rem 0 6rem;
+      padding: 4.5rem 0 5.5rem;
     }
     .code-terminal {
       max-width: 860px;
@@ -628,7 +615,7 @@
     }
     .terminal-header {
       background: #0a0d1c;
-      padding: 12px 16px;
+      padding: 10px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -636,13 +623,13 @@
     }
     .terminal-title {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.76rem;
+      font-size: 0.74rem;
       color: var(--text-dim);
     }
     .terminal-body {
-      padding: 20px;
+      padding: 18px;
       font-family: 'JetBrains Mono', monospace;
-      font-size: clamp(0.75rem, 1.8vw, 0.88rem);
+      font-size: clamp(0.74rem, 1.8vw, 0.85rem);
       line-height: 1.7;
       color: #38bdf8;
       overflow-x: auto;
@@ -684,10 +671,10 @@
       background: rgba(0, 0, 0, 0.6);
       border: none;
       color: #fff;
-      font-size: 28px;
+      font-size: 26px;
       cursor: pointer;
-      width: 40px;
-      height: 40px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -697,17 +684,17 @@
     /* Footer */
     footer.site-footer {
       border-top: 1px solid var(--border-color);
-      padding: 4rem 0 3rem;
+      padding: 3.5rem 0 2.5rem;
       text-align: center;
       color: var(--text-dim);
-      font-size: 0.85rem;
+      font-size: 0.82rem;
     }
     .footer-links {
       display: flex;
       justify-content: center;
       flex-wrap: wrap;
-      gap: 18px;
-      margin-bottom: 1.5rem;
+      gap: 16px;
+      margin-bottom: 1.25rem;
     }
     .footer-links a {
       color: var(--text-muted);
@@ -716,18 +703,23 @@
     }
     .footer-links a:hover { color: #fff; }
 
-    /* Mobile Responsive Breakpoints */
-    @media (min-width: 768px) {
-      .brand-tagline { display: inline-block; }
-      .header-inner { height: 72px; padding: 0; }
-      header.site-header { padding: 0 2rem; }
-    }
-    @media (max-width: 640px) {
-      .header-actions { display: none; }
+    /* Mobile Responsive Rules */
+    @media (max-width: 768px) {
+      nav.nav-links {
+        display: flex;
+        gap: 12px;
+      }
+      nav.nav-links a {
+        font-size: 0.8rem;
+      }
       .hero-ctas .btn { width: 100%; }
       .cards-grid, .gallery-grid, .tech-grid { grid-template-columns: 1fr; }
-      .showcase-bar { font-size: 0.68rem; }
-      section.hero { padding: 3rem 0 2rem; }
+      section.hero { padding: 2.5rem 0 1.5rem; }
+    }
+    @media (max-width: 480px) {
+      nav.nav-links {
+        display: none;
+      }
     }
   </style>
 </head>
@@ -779,22 +771,22 @@
             <circle cx="22" cy="64" r="7" stroke="#34d399" stroke-width="0.8" stroke-opacity="0.5" fill="none" />
           </g>
         </svg>
-        <div>
-          <span class="brand-title">ORBIT</span>
-          <span class="brand-tagline">Relationship Universe</span>
-        </div>
+        <span class="brand-title">ORBIT</span>
       </a>
+
+      <!-- Simple Clean Navigation (4 Core Links) -->
       <nav class="nav-links" aria-label="Main Navigation">
-        <a href="#demo">Live Demo 🎬</a>
-        <a href="#philosophy">Philosophy</a>
+        <a href="#demo">Demo</a>
         <a href="#gallery">Gallery</a>
-        <a href="#docs">Docs & Whitepaper 📄</a>
-        <a href="#faq">FAQ 💬</a>
-        <a href="#quickstart">Quick Start</a>
+        <a href="#docs">Docs (PDF)</a>
+        <a href="#faq">FAQ</a>
       </nav>
+
+      <!-- Simple Clean Action -->
       <div class="header-actions">
-        <a href="Orbit_User_Guide.pdf" class="btn btn-secondary" target="_blank">User Guide (PDF) ↗</a>
-        <a href="https://github.com/hkjang/orbit" class="btn btn-primary" target="_blank">GitHub Repo ★</a>
+        <a href="https://github.com/hkjang/orbit" class="btn btn-primary" target="_blank" aria-label="GitHub Repository">
+          GitHub ★
+        </a>
       </div>
     </div>
   </header>
@@ -805,7 +797,7 @@
       <div class="container">
         <div class="hero-badge">
           <span class="pulse-dot"></span>
-          Personal Relationship Universe Platform
+          Personal Relationship Universe
         </div>
         <h1 class="hero-headline">
           당신의 관계에는<br />
@@ -817,9 +809,9 @@
           하나의 <strong>살아 숨쉬는 우주(Universe)</strong>로 시각화합니다.
         </p>
         <div class="hero-ctas">
-          <a href="#demo" class="btn btn-primary" style="padding: 13px 26px; font-size: 0.98rem;">3분 시연 영상 보기 🎬</a>
-          <a href="#docs" class="btn btn-secondary" style="padding: 13px 26px; font-size: 0.98rem;">공식 백서 (PDF) ↗</a>
-          <a href="#quickstart" class="btn btn-secondary" style="padding: 13px 26px; font-size: 0.98rem;">30초 로컬 시작 →</a>
+          <a href="#demo" class="btn btn-primary" style="padding: 11px 22px; font-size: 0.92rem;">3분 시연 영상 보기 🎬</a>
+          <a href="#docs" class="btn btn-secondary" style="padding: 11px 22px; font-size: 0.92rem;">공식 백서 (PDF) ↗</a>
+          <a href="#quickstart" class="btn btn-secondary" style="padding: 11px 22px; font-size: 0.92rem;">30초 로컬 시작 →</a>
         </div>
 
         <!-- 3-Minute Live Interactive Demo Video -->
@@ -828,7 +820,7 @@
             <div class="dot dot-red"></div>
             <div class="dot dot-yellow"></div>
             <div class="dot dot-green"></div>
-            <div class="showcase-url">orbit-demo.mp4 · 3-Minute Full Walkthrough (60fps HD)</div>
+            <div class="showcase-url">orbit-demo.mp4 · 3-Minute Walkthrough (60fps HD)</div>
           </div>
           <div class="hero-img-wrap" style="background:#000;">
             <video controls autoplay muted loop playsinline style="width: 100%; height: auto; display: block;">
@@ -958,32 +950,32 @@
           <p class="section-desc">엔터프라이즈 실무자와 아키텍트를 위해 엄격하게 작성된 공식 PDF 문서를 다운로드하여 확인하세요.</p>
         </div>
 
-        <div class="tech-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+        <div class="tech-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
           <div class="tech-box" style="border: 1px solid rgba(162, 140, 255, 0.3); background: rgba(13, 16, 34, 0.85); display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-              <div style="font-size: 26px; margin-bottom: 12px;">📘</div>
-              <h3 style="color: #f8fafc; font-size: 1.15rem;">Orbit Official User Guide</h3>
-              <p style="color: var(--text-dim); font-size: 0.88rem; margin: 8px 0 18px; line-height: 1.6;">개인 관계 우주 플랫폼의 핵심 철학, 시각적 문법(Visual Grammar), 캔버스 물리 시뮬레이션 및 전체 사용자 기능 가이드.</p>
+              <div style="font-size: 24px; margin-bottom: 10px;">📘</div>
+              <h3 style="color: #f8fafc; font-size: 1.1rem;">Orbit Official User Guide</h3>
+              <p style="color: var(--text-dim); font-size: 0.86rem; margin: 8px 0 16px; line-height: 1.6;">개인 관계 우주 플랫폼의 핵심 철학, 시각적 문법(Visual Grammar), 캔버스 물리 시뮬레이션 및 전체 사용자 기능 가이드.</p>
             </div>
-            <a href="Orbit_User_Guide.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.85rem; padding: 10px 16px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
+            <a href="Orbit_User_Guide.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.82rem; padding: 9px 14px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
           </div>
 
           <div class="tech-box" style="border: 1px solid rgba(52, 211, 153, 0.3); background: rgba(13, 16, 34, 0.85); display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-              <div style="font-size: 26px; margin-bottom: 12px;">📗</div>
-              <h3 style="color: #f8fafc; font-size: 1.15rem;">CRU Operations Manual</h3>
-              <p style="color: var(--text-dim); font-size: 0.88rem; margin: 8px 0 18px; line-height: 1.6;">Create · Read · Update 단계별 라이프사이클 실무 가이드 및 엔터프라이즈 팀 승인(Approval) 거버넌스 운영 지침.</p>
+              <div style="font-size: 24px; margin-bottom: 10px;">📗</div>
+              <h3 style="color: #f8fafc; font-size: 1.1rem;">CRU Operations Manual</h3>
+              <p style="color: var(--text-dim); font-size: 0.86rem; margin: 8px 0 16px; line-height: 1.6;">Create · Read · Update 단계별 라이프사이클 실무 가이드 및 엔터프라이즈 팀 승인(Approval) 거버넌스 운영 지침.</p>
             </div>
-            <a href="Orbit_CRU_Operations_Manual.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.85rem; padding: 10px 16px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
+            <a href="Orbit_CRU_Operations_Manual.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.82rem; padding: 9px 14px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
           </div>
 
           <div class="tech-box" style="border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(13, 16, 34, 0.85); display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-              <div style="font-size: 26px; margin-bottom: 12px;">📙</div>
-              <h3 style="color: #f8fafc; font-size: 1.15rem;">Architecture & MCP Whitepaper</h3>
-              <p style="color: var(--text-dim); font-size: 0.88rem; margin: 8px 0 18px; line-height: 1.6;">Go 모듈형 모놀리스 구조, 사용자별 AES-256-GCM 봉투 암호화, Zero-Downtime 키 회전 및 Dual-Era Streamable MCP 사양서.</p>
+              <div style="font-size: 24px; margin-bottom: 10px;">📙</div>
+              <h3 style="color: #f8fafc; font-size: 1.1rem;">Architecture & MCP Whitepaper</h3>
+              <p style="color: var(--text-dim); font-size: 0.86rem; margin: 8px 0 16px; line-height: 1.6;">Go 모듈형 모놀리스 구조, 사용자별 AES-256-GCM 봉투 암호화, Zero-Downtime 키 회전 및 Dual-Era Streamable MCP 사양서.</p>
             </div>
-            <a href="Orbit_Architecture_and_API_Whitepaper.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.85rem; padding: 10px 16px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
+            <a href="Orbit_Architecture_and_API_Whitepaper.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.82rem; padding: 9px 14px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
           </div>
         </div>
       </div>
