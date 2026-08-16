@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: go test -race ./...
+      - run: npm ci --no-audit --no-fund
+        working-directory: web
+      - run: npm run test -- --run
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: docker build --build-arg VERSION=ci --build-arg COMMIT=${GITHUB_SHA::12} --build-arg BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) -t orbit:ci .

@@ -1,0 +1,52 @@
+name: Offline image release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate semantic version tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+      - name: Build service image
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg VERSION="$RELEASE_TAG" \
+            --build-arg COMMIT="${GITHUB_SHA::12}" \
+            --build-arg BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label org.opencontainers.image.version="$RELEASE_TAG" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -t "orbit:$RELEASE_TAG" .
+      - name: Export offline image archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          docker save "orbit:$RELEASE_TAG" | gzip -9 > "orbit-$RELEASE_TAG.tar.gz"
+      - name: Verify image archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "$(tar -xOzf "orbit-$RELEASE_TAG.tar.gz" manifest.json | grep -o 'orbit:[^"\\]*' | head -1)" = "orbit:$RELEASE_TAG"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "orbit-$RELEASE_TAG.tar.gz" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            --title "Orbit $RELEASE_TAG"

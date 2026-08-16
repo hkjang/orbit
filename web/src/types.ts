@@ -1,0 +1,77 @@
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  display_name: string;
+  role: "admin" | "team_lead" | "member";
+  status: "active" | "disabled";
+  last_login_at?: string;
+  created_at: string;
+}
+
+export interface PublicConfig {
+  service_name: string;
+  version: string;
+  commit: string;
+  built_at: string;
+  oidc: { enabled: boolean; display_name: string };
+}
+
+export interface Person {
+  id: string;
+  display_name: string;
+  company: string;
+  role_title: string;
+  avatar_url: string;
+  email: string;
+  phone: string;
+  note: string;
+  first_met?: string;
+  importance: number;
+  closeness: number;
+  momentum: number;
+  stable_x: number;
+  stable_y: number;
+  categories: string[];
+  relationship_label: string;
+  last_interaction_at?: string;
+  created_at: string;
+}
+
+export interface OrbitNode {
+  id: string;
+  name: string;
+  avatar_url: string;
+  importance: number;
+  closeness: number;
+  momentum: number;
+  x: number;
+  y: number;
+  categories: string[];
+  label: string;
+  last_interaction_at?: string;
+}
+
+export interface Memory {
+  id: string;
+  person_id?: string;
+  person_name?: string;
+  title: string;
+  content: string;
+  occurred_at?: string;
+  source_type: string;
+  source_reference: string;
+  topics: string[];
+  status: "draft" | "pending" | "approved" | "rejected";
+  created_at: string;
+}
+
+export interface Interaction {
+  id: string;
+  kind: string;
+  occurred_at: string;
+  weight: number;
+  summary: string;
+  source: string;
+  created_at: string;
+}

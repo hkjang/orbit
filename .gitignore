@@ -1,0 +1,10 @@
+.env
+.DS_Store
+node_modules/
+web/dist/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
+coverage/
+*.out
+/orbit

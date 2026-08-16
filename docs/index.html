@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit — Your relationships have gravity. | Personal Relationship Universe</title>
+  <meta name="description" content="Orbit은 사람들을 단순한 CRM 점수나 정적인 연락처로 다루지 않고, 나와 그 사람 사이의 중력(Gravity)과 거리, 기억의 흐름을 하나의 우주로 시각화하는 프라이빗 관계 관리 플랫폼입니다.">
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none'><circle cx='24' cy='24' r='23' fill='%23090b18' stroke='%23a28cff' stroke-width='2'/><circle cx='24' cy='24' r='14' stroke='%236366f1' stroke-width='1.5' stroke-dasharray='4 3'/><circle cx='24' cy='24' r='5' fill='%23f6c96b'/><circle cx='10' cy='24' r='3.5' fill='%23a28cff'/><circle cx='34' cy='16' r='3' fill='%2334d399'/></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-dark: #070913;
+      --bg-card: #0d1022;
+      --bg-card-hover: #141936;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(162, 140, 255, 0.4);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --accent-purple: #a28cff;
+      --accent-indigo: #6366f1;
+      --accent-gold: #f6c96b;
+      --accent-emerald: #34d399;
+      --accent-blue: #38bdf8;
+      
+      --gradient-brand: linear-gradient(135deg, #a28cff 0%, #6366f1 50%, #f6c96b 100%);
+      --gradient-glow: radial-gradient(circle, rgba(162, 140, 255, 0.15) 0%, rgba(99, 102, 241, 0.08) 45%, transparent 70%);
+      --shadow-glow: 0 0 60px -10px rgba(162, 140, 255, 0.25);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 22px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Ambient Space Glow */
+    .ambient-glow {
+      position: fixed;
+      top: -25%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1200px;
+      height: 700px;
+      background: var(--gradient-glow);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Header */
+    header.site-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(7, 9, 19, 0.82);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0 2rem;
+    }
+    .header-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #fff;
+    }
+    .brand-icon-svg {
+      width: 38px;
+      height: 38px;
+      filter: drop-shadow(0 0 12px rgba(162, 140, 255, 0.5));
+    }
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+    .brand-tagline {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      font-weight: 400;
+      margin-left: 6px;
+      display: none;
+    }
+    @media (min-width: 768px) { .brand-tagline { display: inline-block; } }
+
+    nav.nav-links {
+      display: none;
+      align-items: center;
+      gap: 28px;
+    }
+    @media (min-width: 900px) { nav.nav-links { display: flex; } }
+    nav.nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+    nav.nav-links a:hover { color: #fff; }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 0.92rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+    .btn-primary {
+      background: var(--gradient-brand);
+      color: #090b18;
+      font-weight: 700;
+      box-shadow: 0 4px 16px rgba(162, 140, 255, 0.35);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 22px rgba(162, 140, 255, 0.55);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Hero Section */
+    section.hero {
+      padding: 5.5rem 0 4rem;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 18px;
+      border-radius: 999px;
+      background: rgba(162, 140, 255, 0.12);
+      border: 1px solid rgba(162, 140, 255, 0.3);
+      color: #c4b5fd;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+    }
+    .hero-badge span.pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      box-shadow: 0 0 10px var(--accent-gold);
+    }
+    h1.hero-headline {
+      font-size: clamp(2.4rem, 5.2vw, 4.4rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+    }
+    h1.hero-headline em {
+      font-style: normal;
+      background: var(--gradient-brand);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p.hero-subhead {
+      max-width: 780px;
+      margin: 0 auto 2.5rem;
+      font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+      color: var(--text-muted);
+      font-weight: 400;
+      line-height: 1.7;
+    }
+    .hero-ctas {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 4rem;
+    }
+
+    /* Hero Showcase Frame */
+    .hero-showcase {
+      position: relative;
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: var(--bg-card);
+      overflow: hidden;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), var(--shadow-glow);
+    }
+    .showcase-bar {
+      height: 42px;
+      background: #080a16;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 8px;
+    }
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+    .showcase-url {
+      margin-left: 12px;
+      padding: 4px 16px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+    .hero-img-wrap {
+      width: 100%;
+      line-height: 0;
+      background: #000;
+    }
+    .hero-img-wrap img {
+      width: 100%;
+      height: auto;
+      display: block;
+      cursor: pointer;
+      transition: transform 0.3s ease;
+    }
+    .hero-img-wrap img:hover { transform: scale(1.01); }
+
+    /* Philosophy Section */
+    section.philosophy-section {
+      padding: 6rem 0;
+      border-top: 1px solid var(--border-color);
+    }
+    .section-head {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+    .section-head p.eyebrow {
+      color: var(--accent-purple);
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+    .section-head h2 {
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 28px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--border-focus);
+    }
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      display: inline-block;
+    }
+    .feature-card h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      color: #fff;
+    }
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* Live Product Gallery */
+    section.gallery-section {
+      padding: 6rem 0;
+      border-top: 1px solid var(--border-color);
+      background: linear-gradient(180deg, transparent 0%, rgba(13, 16, 34, 0.4) 100%);
+    }
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+    .gallery-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    .gallery-card:hover {
+      transform: translateY(-5px);
+      border-color: var(--border-focus);
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.6);
+    }
+    .gallery-thumb {
+      width: 100%;
+      height: 210px;
+      overflow: hidden;
+      background: #000;
+    }
+    .gallery-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top;
+      transition: transform 0.3s ease;
+    }
+    .gallery-card:hover .gallery-thumb img {
+      transform: scale(1.05);
+    }
+    .gallery-info {
+      padding: 16px 20px;
+    }
+    .gallery-info h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .gallery-info p {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+
+    /* Technical Architecture */
+    section.tech-section {
+      padding: 6rem 0;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .tech-box {
+      padding: 26px;
+      border-radius: var(--radius-md);
+      background: rgba(7, 9, 19, 0.6);
+      border: 1px solid var(--border-color);
+    }
+    .tech-box h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #c4b5fd;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tech-box ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .tech-box ul li strong { color: #fff; }
+
+    /* Quick Start */
+    section.quickstart-section {
+      padding: 6rem 0;
+      text-align: center;
+    }
+    .code-terminal {
+      max-width: 820px;
+      margin: 2.5rem auto 0;
+      background: #04060d;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      text-align: left;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+    }
+    .terminal-header {
+      background: #0a0d1c;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .terminal-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+    }
+    .terminal-body {
+      padding: 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      line-height: 1.7;
+      color: #38bdf8;
+      overflow-x: auto;
+    }
+    .terminal-body .comment { color: #64748b; }
+    .terminal-body .cmd { color: #f8fafc; }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(10px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 2rem;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal-content {
+      max-width: 95vw;
+      max-height: 90vh;
+      position: relative;
+    }
+    .modal-content img {
+      max-width: 100%;
+      max-height: 85vh;
+      border-radius: var(--radius-sm);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .modal-close {
+      position: absolute;
+      top: -45px;
+      right: 0;
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 32px;
+      cursor: pointer;
+    }
+
+    /* Footer */
+    footer.site-footer {
+      border-top: 1px solid var(--border-color);
+      padding: 4rem 0 3rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 1.5rem;
+    }
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: #fff; }
+  </style>
+</head>
+<body>
+
+  <div class="ambient-glow"></div>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="#" class="brand-logo">
+        <svg class="brand-icon-svg" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="22" fill="#090b18" stroke="#a28cff" stroke-width="2"/>
+          <circle cx="24" cy="24" r="14" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <circle cx="24" cy="24" r="5" fill="#f6c96b"/>
+          <circle cx="10" cy="24" r="3.5" fill="#a28cff"/>
+          <circle cx="34" cy="16" r="3" fill="#34d399"/>
+        </svg>
+        <div>
+          <span class="brand-title">ORBIT</span>
+          <span class="brand-tagline">Relationship Universe</span>
+        </div>
+      </a>
+      <nav class="nav-links">
+        <a href="#philosophy">Philosophy</a>
+        <a href="#gallery">Live Gallery</a>
+        <a href="#specs">Specs & Security</a>
+        <a href="#quickstart">Quick Start</a>
+      </nav>
+      <div class="header-actions">
+        <a href="guide.md" class="btn btn-secondary" target="_blank">Docs Manual ↗</a>
+        <a href="https://github.com/hkjang/orbit" class="btn btn-primary" target="_blank">GitHub Repo ★</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <span class="pulse-dot"></span>
+        Personal Relationship Universe Platform
+      </div>
+      <h1 class="hero-headline">
+        당신의 관계에는<br />
+        <em>중력이 있습니다.</em>
+      </h1>
+      <p class="hero-subhead">
+        사람들을 무미건조한 CRM 점수나 정적인 연락처로 환원하지 마세요.<br />
+        Orbit은 나와 그 사람 사이의 중력(Gravity), 시간의 흐름, 암호화된 기억을<br />
+        하나의 <strong>살아 숨쉬는 우주(Universe)</strong>로 시각화합니다.
+      </p>
+      <div class="hero-ctas">
+        <a href="#quickstart" class="btn btn-primary" style="padding: 14px 28px; font-size: 1rem;">로컬에서 30초 만에 시작하기 →</a>
+        <a href="#gallery" class="btn btn-secondary" style="padding: 14px 28px; font-size: 1rem;">실제 화면 둘러보기</a>
+      </div>
+
+      <!-- Hero Visual Showcase -->
+      <div class="hero-showcase">
+        <div class="showcase-bar">
+          <div class="dot dot-red"></div>
+          <div class="dot dot-yellow"></div>
+          <div class="dot dot-green"></div>
+          <div class="showcase-url">https://orbit.internal/orbit (60fps Canvas Universe)</div>
+        </div>
+        <div class="hero-img-wrap">
+          <img src="images/09_orbit_canvas_populated.png" alt="Orbit Universe Canvas" onclick="openModal(this.src)">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Philosophy & Core Highlights -->
+  <section id="philosophy" class="philosophy-section">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">The Orbit Philosophy</p>
+        <h2>관계는 평가가 아니라 움직임으로 보입니다</h2>
+      </div>
+      <div class="cards-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🌌</div>
+          <h3>Canvas Physics & Semantic Zoom</h3>
+          <p>충돌 이완(Collision relaxation)과 중력 가속도 기반으로 인물들이 서로 겹치지 않고 안정된 위치를 유지합니다.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔐</div>
+          <h3>Per-User Envelope Encryption</h3>
+          <p>모든 교류 기록과 소중한 기억은 사용자별 <strong>AES-256-GCM</strong> 데이터 키로 완벽하게 암호화되어 보존됩니다.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3>AI Co-Pilot & Rediscover</h3>
+          <p>오랜 시간 소원해진 인연을 다시 환기하고, 과거 나눈 이야기 맥락을 기반으로 따뜻한 대화 전략을 제안합니다.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔌</div>
+          <h3>Streamable HTTP MCP</h3>
+          <p><code>/mcp</code> 엔드포인트를 통해 AI 에이전트 도구와 안전하게 나의 관계 맥락을 실시간 공유할 수 있습니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Product Tour & Gallery -->
+  <section id="gallery" class="gallery-section">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Product Tour</p>
+        <h2>Orbit 서비스 전 화면 갤러리</h2>
+      </div>
+      <div class="gallery-grid">
+        <div class="gallery-card" onclick="openModal('images/01_login_page.png')">
+          <div class="gallery-thumb"><img src="images/01_login_page.png" alt="로그인 화면"></div>
+          <div class="gallery-info"><h4>01. 로그인 및 OIDC SSO</h4><p>로컬 관리자 및 Keycloak OIDC Discovery</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/09_orbit_canvas_populated.png')">
+          <div class="gallery-thumb"><img src="images/09_orbit_canvas_populated.png" alt="나의 우주 캔버스"></div>
+          <div class="gallery-info"><h4>02. 나의 우주 (Orbit Canvas)</h4><p>중력 및 궤도 기반 인물 관계망 시각화</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/03_person_create_modal.png')">
+          <div class="gallery-thumb"><img src="images/03_person_create_modal.png" alt="인물 생성 모달"></div>
+          <div class="gallery-info"><h4>03. 인물 등록 (CRU Create)</h4><p>첫 만남 시기, 관계 라벨, 중요도 슬라이더</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/04_people_list_grid.png')">
+          <div class="gallery-thumb"><img src="images/04_people_list_grid.png" alt="관계 목록"></div>
+          <div class="gallery-info"><h4>04. 관계 목록 (People Grid)</h4><p>소속, 궤도 상태, 최근 교류일 필터</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/05_person_detail.png')">
+          <div class="gallery-thumb"><img src="images/05_person_detail.png" alt="인물 상세"></div>
+          <div class="gallery-info"><h4>05. 인물 상세 및 이야기 타임라인</h4><p>함께한 시간, 교류 기록 및 기억 스트림</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/06_interaction_create_modal.png')">
+          <div class="gallery-thumb"><img src="images/06_interaction_create_modal.png" alt="인터랙션 등록"></div>
+          <div class="gallery-info"><h4>06. 교류 기록 추가 (Interaction)</h4><p>오프라인 미팅, 통화, 대화 요약 기록</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/08_person_edit_modal.png')">
+          <div class="gallery-thumb"><img src="images/08_person_edit_modal.png" alt="인물 정보 수정"></div>
+          <div class="gallery-info"><h4>07. 궤도 중요도 수정 (CRU Update)</h4><p>관계 중력 및 거리 실시간 보정</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/10_memories_rediscover.png')">
+          <div class="gallery-thumb"><img src="images/10_memories_rediscover.png" alt="기억 보관소"></div>
+          <div class="gallery-info"><h4>08. 기억 보관소 (Memories)</h4><p>암호화된 기억과 토픽 태그 아카이브</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/11_ai_copilot_chat.png')">
+          <div class="gallery-thumb"><img src="images/11_ai_copilot_chat.png" alt="AI Co-Pilot"></div>
+          <div class="gallery-info"><h4>09. AI Relationship Co-Pilot</h4><p>과거 기억 기반 관계 분석 및 안부 제안</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/12_approvals_reviews.png')">
+          <div class="gallery-thumb"><img src="images/12_approvals_reviews.png" alt="검토 및 승인"></div>
+          <div class="gallery-info"><h4>10. 팀 승인 및 검토함</h4><p>외부 이해관계자 관계 등록 거버넌스</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/13_personal_settings_keys.png')">
+          <div class="gallery-thumb"><img src="images/13_personal_settings_keys.png" alt="개인화 및 암호화 키"></div>
+          <div class="gallery-info"><h4>11. 개인화 & 키 관리</h4><p>사용자 전용 AES-256-GCM 키 회전</p></div>
+        </div>
+        <div class="gallery-card" onclick="openModal('images/14_admin_service_console.png')">
+          <div class="gallery-thumb"><img src="images/14_admin_service_console.png" alt="서비스 관리"></div>
+          <div class="gallery-info"><h4>12. 관리자 서비스 콘솔</h4><p>Keycloak SSO, LLM 설정, RBAC 권한</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Technical Specs -->
+  <section id="specs" class="tech-section">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Enterprise Specifications</p>
+        <h2>타협 없는 보안성과 확장 아키텍처</h2>
+      </div>
+      <div class="tech-grid">
+        <div class="tech-box">
+          <h3>🌌 Independent Canvas</h3>
+          <ul>
+            <li><strong>HTML5 Canvas 60fps</strong> 고성능 렌더링</li>
+            <li>Collision Relaxation & 공간 인덱싱</li>
+            <li>MUI 9 기반 직관적인 어드민 컨트롤</li>
+          </ul>
+        </div>
+        <div class="tech-box">
+          <h3>🔐 Zero-Trust Security</h3>
+          <ul>
+            <li><strong>AES-256-GCM</strong> 사용자별 데이터 키 암호화</li>
+            <li>트랜잭션 기반 무중단 키 회전 지원</li>
+            <li>Keycloak OIDC PKCE SSO 연동</li>
+          </ul>
+        </div>
+        <div class="tech-box">
+          <h3>🤖 AI Gateway & MCP</h3>
+          <ul>
+            <li><strong>/mcp</strong> Streamable HTTP MCP 엔드포인트</li>
+            <li>OpenAI Responses 호환 SSE 스트리밍</li>
+            <li>최대 262,144 토큰 컨텍스트 지원</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start Section -->
+  <section id="quickstart" class="quickstart-section">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Ready to launch?</p>
+        <h2>30초 만에 로컬에서 실행하기</h2>
+      </div>
+      
+      <div class="code-terminal">
+        <div class="terminal-header">
+          <div style="display:flex;gap:6px;"><div class="dot dot-red"></div><div class="dot dot-yellow"></div><div class="dot dot-green"></div></div>
+          <div class="terminal-title">bash · quickstart.sh</div>
+        </div>
+        <div class="terminal-body">
+          <span class="comment"># 1. PostgreSQL 컨테이너 실행</span><br>
+          <span class="cmd">docker run -d --name orbit-db -p 5432:5432 -e POSTGRES_USER=orbit -e POSTGRES_PASSWORD=orbit -e POSTGRES_DB=orbit postgres:16-alpine</span><br><br>
+          <span class="comment"># 2. 필수 환경변수 설정 (정확히 4개)</span><br>
+          <span class="cmd">export DATABASE_URL='postgresql://orbit:orbit@127.0.0.1:5432/orbit?sslmode=disable'</span><br>
+          <span class="cmd">export BOOTSTRAP_ADMIN='admin@example.internal'</span><br>
+          <span class="cmd">export BOOTSTRAP_ADMIN_PASSWORD='a-long-bootstrap-password'</span><br>
+          <span class="cmd">export ENCRYPTION_KEY="$(openssl rand -base64 32)"</span><br><br>
+          <span class="comment"># 3. Orbit 서비스 빌드 및 실행</span><br>
+          <span class="cmd">./orbit</span><br><br>
+          <span class="comment"># 4. 브라우저에서 http://localhost:8080 접속!</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal Viewer -->
+  <div id="imageModal" class="modal-backdrop" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <img id="modalImg" src="" alt="확대 이미지">
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="guide.md">사용자 가이드</a>
+        <a href="cru-manual.md">CRU 매뉴얼</a>
+        <a href="ARCHITECTURE.md">아키텍처</a>
+        <a href="API.md">REST & MCP API</a>
+        <a href="OFFLINE.md">오프라인 배포</a>
+        <a href="https://github.com/hkjang/orbit">GitHub</a>
+      </div>
+      <p>Copyright © 2026 Orbit Contributors. Your relationships have gravity.</p>
+    </div>
+  </footer>
+
+  <script>
+    function openModal(src) {
+      document.getElementById('modalImg').src = src;
+      document.getElementById('imageModal').classList.add('active');
+    }
+    function closeModal() {
+      document.getElementById('imageModal').classList.remove('active');
+    }
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeModal();
+    });
+  </script>
+</body>
+</html>
