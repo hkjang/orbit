@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <!-- Background Radial Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#121630" />
+      <stop offset="85%" stop-color="#090b18" />
+      <stop offset="100%" stop-color="#060710" />
+    </radialGradient>
+
+    <!-- Core Sun Gradient -->
+    <radialGradient id="sunGrad" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#fff4cc" />
+      <stop offset="45%" stop-color="#f6c96b" />
+      <stop offset="100%" stop-color="#e09b2d" />
+    </radialGradient>
+
+    <!-- Planet 1 Gradient (Purple) -->
+    <radialGradient id="planetPurple" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#e4dcff" />
+      <stop offset="60%" stop-color="#a28cff" />
+      <stop offset="100%" stop-color="#6d4aff" />
+    </radialGradient>
+
+    <!-- Planet 2 Gradient (Emerald) -->
+    <radialGradient id="planetGreen" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#a7f3d0" />
+      <stop offset="60%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </radialGradient>
+
+    <!-- Sun Glow Filter -->
+    <filter id="sunGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Orbit Ring Glow -->
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a28cff" stop-opacity="0.85" />
+      <stop offset="50%" stop-color="#6366f1" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#f6c96b" stop-opacity="0.75" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Circular Container -->
+  <circle cx="64" cy="64" r="60" fill="url(#bgGrad)" stroke="#a28cff" stroke-width="2.5" stroke-opacity="0.4" />
+
+  <!-- Outer Ambient Glow Ring -->
+  <circle cx="64" cy="64" r="48" stroke="#6366f1" stroke-width="1.2" stroke-opacity="0.25" stroke-dasharray="6 4" />
+
+  <!-- Elliptical Tilted Orbit Ring 1 -->
+  <ellipse cx="64" cy="64" rx="42" ry="20" transform="rotate(-28 64 64)" stroke="url(#ringGrad)" stroke-width="2.2" stroke-linecap="round" />
+
+  <!-- Elliptical Tilted Orbit Ring 2 (Dashed Counter-Orbit) -->
+  <ellipse cx="64" cy="64" rx="36" ry="16" transform="rotate(42 64 64)" stroke="#a28cff" stroke-width="1" stroke-opacity="0.35" stroke-dasharray="3 4" />
+
+  <!-- Center Core Star (Sun / Gravity Core) -->
+  <circle cx="64" cy="64" r="14" fill="url(#sunGrad)" filter="url(#sunGlow)" />
+  <circle cx="64" cy="64" r="11" fill="url(#sunGrad)" />
+
+  <!-- Orbiting Planet 1 (Purple - Top Right on Orbit 1) -->
+  <g transform="rotate(-28 64 64)">
+    <circle cx="106" cy="64" r="7.5" fill="url(#planetPurple)" />
+    <!-- Planet Atmosphere Glow -->
+    <circle cx="106" cy="64" r="9.5" stroke="#a28cff" stroke-width="1" stroke-opacity="0.6" />
+  </g>
+
+  <!-- Orbiting Planet 2 (Emerald - Bottom Left on Orbit 1) -->
+  <g transform="rotate(-28 64 64)">
+    <circle cx="22" cy="64" r="5.5" fill="url(#planetGreen)" />
+    <circle cx="22" cy="64" r="7.5" stroke="#34d399" stroke-width="0.8" stroke-opacity="0.5" />
+  </g>
+</svg>

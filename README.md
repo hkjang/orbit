@@ -1,6 +1,7 @@
 # Orbit — Personal Relationship Universe
 
 <p align="center">
+  <img src="docs/logo.svg" alt="Orbit Logo" width="100" height="100"><br>
   <img src="docs/images/09_orbit_canvas_populated.png" alt="Orbit Universe Canvas" width="900" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
 </p>
 
