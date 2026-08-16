@@ -568,11 +568,12 @@
         <a href="#demo">Live Demo 🎬</a>
         <a href="#philosophy">Philosophy</a>
         <a href="#gallery">Live Gallery</a>
+        <a href="#docs">Enterprise Docs 📄</a>
         <a href="#specs">Specs & Security</a>
         <a href="#quickstart">Quick Start</a>
       </nav>
       <div class="header-actions">
-        <a href="guide.md" class="btn btn-secondary" target="_blank">Docs Manual ↗</a>
+        <a href="Orbit_User_Guide.pdf" class="btn btn-secondary" target="_blank">User Guide (PDF) ↗</a>
         <a href="https://github.com/hkjang/orbit" class="btn btn-primary" target="_blank">GitHub Repo ★</a>
       </div>
     </div>
@@ -709,20 +710,62 @@
     </div>
   </section>
 
-  <!-- Technical Specs -->
+  <!-- Enterprise Documents & Whitepapers -->
+  <section id="docs" class="tech-section" style="background: var(--bg-dark); border-top: 1px solid var(--border-color);">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Enterprise Documentation</p>
+        <h2>공식 매뉴얼 & 아키텍처 백서 (PDF)</h2>
+        <p class="section-desc">엔터프라이즈 실무자와 아키텍트를 위해 엄격하게 작성된 공식 PDF 문서를 다운로드하여 확인하세요.</p>
+      </div>
+
+      <div class="tech-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+        <div class="tech-box" style="border: 1px solid rgba(162, 140, 255, 0.3); background: rgba(13, 16, 34, 0.85); display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="font-size: 26px; margin-bottom: 12px;">📘</div>
+            <h3 style="color: #f8fafc; font-size: 1.15rem;">Orbit Official User Guide</h3>
+            <p style="color: var(--text-dim); font-size: 0.88rem; margin: 8px 0 18px; line-height: 1.6;">개인 관계 우주 플랫폼의 핵심 철학, 시각적 문법(Visual Grammar), 캔버스 물리 시뮬레이션 및 전체 사용자 기능 가이드.</p>
+          </div>
+          <a href="Orbit_User_Guide.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.85rem; padding: 10px 16px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
+        </div>
+
+        <div class="tech-box" style="border: 1px solid rgba(52, 211, 153, 0.3); background: rgba(13, 16, 34, 0.85); display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="font-size: 26px; margin-bottom: 12px;">📗</div>
+            <h3 style="color: #f8fafc; font-size: 1.15rem;">CRU Operations Manual</h3>
+            <p style="color: var(--text-dim); font-size: 0.88rem; margin: 8px 0 18px; line-height: 1.6;">Create · Read · Update 단계별 라이프사이클 실무 가이드 및 엔터프라이즈 팀 승인(Approval) 거버넌스 운영 지침.</p>
+          </div>
+          <a href="Orbit_CRU_Operations_Manual.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.85rem; padding: 10px 16px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
+        </div>
+
+        <div class="tech-box" style="border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(13, 16, 34, 0.85); display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="font-size: 26px; margin-bottom: 12px;">📙</div>
+            <h3 style="color: #f8fafc; font-size: 1.15rem;">Architecture & MCP Whitepaper</h3>
+            <p style="color: var(--text-dim); font-size: 0.88rem; margin: 8px 0 18px; line-height: 1.6;">Go 모듈형 모놀리스 구조, 사용자별 AES-256-GCM 봉투 암호화, Zero-Downtime 키 회전 및 Dual-Era Streamable MCP 사양서.</p>
+          </div>
+          <a href="Orbit_Architecture_and_API_Whitepaper.pdf" class="btn btn-primary" style="text-align: center; font-size: 0.85rem; padding: 10px 16px;" target="_blank">PDF 다운로드 / 열람 ↗</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Technical Architecture Specs -->
   <section id="specs" class="tech-section">
     <div class="container">
       <div class="section-head">
         <p class="eyebrow">Enterprise Specifications</p>
-        <h2>타협 없는 보안성과 확장 아키텍처</h2>
+        <h2>검증된 엔터프라이즈 아키텍처</h2>
+        <p class="section-desc">단일 Go 바이너리로 제공되는 최고의 보안과 오프라인 배포 완결성.</p>
       </div>
+
       <div class="tech-grid">
         <div class="tech-box">
-          <h3>🌌 Independent Canvas</h3>
+          <h3>📦 Go Single Executable</h3>
           <ul>
-            <li><strong>HTML5 Canvas 60fps</strong> 고성능 렌더링</li>
-            <li>Collision Relaxation & 공간 인덱싱</li>
-            <li>MUI 9 기반 직관적인 어드민 컨트롤</li>
+            <li>Go 1.26+ 컴파일 단일 바이너리</li>
+            <li>React 19 SPA 내장 임베딩 (go:embed)</li>
+            <li>PostgreSQL 16+ 단일 런타임 의존성</li>
           </ul>
         </div>
         <div class="tech-box">
@@ -786,11 +829,9 @@
   <footer class="site-footer">
     <div class="container">
       <div class="footer-links">
-        <a href="guide.md">사용자 가이드</a>
-        <a href="cru-manual.md">CRU 매뉴얼</a>
-        <a href="ARCHITECTURE.md">아키텍처</a>
-        <a href="API.md">REST & MCP API</a>
-        <a href="OFFLINE.md">오프라인 배포</a>
+        <a href="Orbit_User_Guide.pdf" target="_blank">사용자 가이드 (PDF)</a>
+        <a href="Orbit_CRU_Operations_Manual.pdf" target="_blank">CRU 매뉴얼 (PDF)</a>
+        <a href="Orbit_Architecture_and_API_Whitepaper.pdf" target="_blank">아키텍처 & MCP 백서 (PDF)</a>
         <a href="https://github.com/hkjang/orbit">GitHub</a>
       </div>
       <p>Copyright © 2026 Orbit Contributors. Your relationships have gravity.</p>
