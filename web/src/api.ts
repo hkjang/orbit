@@ -8,6 +8,28 @@ export class APIError extends Error {
   }
 }
 
+/**
+ * 세션이 끊겼을 때 알림을 받을 곳.
+ *
+ * 만료는 서버만 안다. 화면은 로그인한 사용자를 기억한 채로 남아 있으므로,
+ * 알려주지 않으면 모든 요청이 "로그인이 필요합니다"로 실패하는 화면에
+ * 갇힌다. 로그인 화면으로 돌아갈 길을 여기서 연다.
+ */
+let onUnauthorized: (() => void) | undefined;
+
+export function setUnauthorizedHandler(handler: (() => void) | undefined) {
+  onUnauthorized = handler;
+}
+
+// 로그인 자체의 401은 자격 증명이 틀린 것이지 세션이 끊긴 게 아니다.
+const AUTH_PATHS = ["/auth/login", "/auth/logout", "/auth/oidc"];
+
+function reportUnauthorized(path: string, status: number) {
+  if (status !== 401) return;
+  if (AUTH_PATHS.some((prefix) => path.startsWith(prefix))) return;
+  onUnauthorized?.();
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},
@@ -24,6 +46,7 @@ export async function api<T>(
     } catch {
       /* response was not JSON */
     }
+    reportUnauthorized(path, response.status);
     throw new APIError(
       response.status,
       data.error?.code ?? "request_failed",
@@ -48,6 +71,7 @@ export async function streamAI(
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
+    reportUnauthorized("/ai/stream", response.status);
     throw new APIError(
       response.status,
       data.error?.code ?? "ai_failed",

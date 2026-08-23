@@ -20,6 +20,9 @@ export function LoginPage() {
   const { login, config } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // 왜 로그인 화면에 와 있는지 알려준다. 갑자기 튕긴 것처럼 보이면
+  // 사용자는 자기가 뭘 잘못했는지 찾게 된다.
+  const expired = Boolean((location.state as { expired?: boolean })?.expired);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -148,6 +151,12 @@ export function LoginPage() {
             <Typography color="text.secondary" sx={{ mt: 1, mb: 3 }}>
               나의 Orbit으로 안전하게 들어갑니다.
             </Typography>
+            {expired && !error && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                로그인 세션이 만료되어 다시 로그인이 필요합니다. 마치면 보고
+                있던 화면으로 돌아갑니다.
+              </Alert>
+            )}
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
                 {error}

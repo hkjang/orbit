@@ -33,7 +33,7 @@ const AdminPage = lazy(() =>
 );
 
 function Protected() {
-  const { user, loading } = useAuth();
+  const { user, loading, expired } = useAuth();
   const location = useLocation();
   if (loading)
     return (
@@ -42,7 +42,13 @@ function Protected() {
       </Box>
     );
   if (!user)
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname, expired }}
+      />
+    );
   return <Layout />;
 }
 
