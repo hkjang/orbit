@@ -67,6 +67,24 @@ describe("readGrammar", () => {
     expect(g.dormantDays).toBeNull();
   });
 
+  it("keeps an anchored relationship from being pushed outward by silence", () => {
+    const silent = { momentum: 0, last_interaction_at: daysAgo(DORMANT_DAYS + 90) };
+    expect(readGrammar(silent, NOW).state).toBe("dormant");
+    const held = readGrammar({ ...silent, anchored: true }, NOW);
+    expect(held.state).toBe("stable");
+    expect(held.anchored).toBe(true);
+    // 침묵은 가려도 경과 일수 자체는 그대로 보고합니다.
+    expect(held.dormantDays).toBe(DORMANT_DAYS + 90);
+  });
+
+  it("still reports a real decline on an anchored relationship", () => {
+    const held = readGrammar(
+      { momentum: -0.5, last_interaction_at: daysAgo(4), anchored: true },
+      NOW,
+    );
+    expect(held.state).toBe("drifting");
+  });
+
   it("survives an unparsable timestamp", () => {
     expect(daysSince("not-a-date", NOW)).toBeNull();
     expect(

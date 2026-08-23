@@ -398,6 +398,24 @@ export function OrbitCanvas({
           ctx.arc(p.x, p.y, radius + 7, 0, Math.PI * 2);
           ctx.stroke();
         }
+        if (node.anchored) {
+          // Anchored Star: 궤도에 못 박힌 별. 네 방향 고정 침으로 표시합니다.
+          ctx.strokeStyle = "rgba(246,217,129,.8)";
+          ctx.lineWidth = 1.5;
+          for (let i = 0; i < 4; i++) {
+            const spoke = Math.PI / 4 + (i * Math.PI) / 2;
+            ctx.beginPath();
+            ctx.moveTo(
+              p.x + Math.cos(spoke) * (radius + 4),
+              p.y + Math.sin(spoke) * (radius + 4),
+            );
+            ctx.lineTo(
+              p.x + Math.cos(spoke) * (radius + 9),
+              p.y + Math.sin(spoke) * (radius + 9),
+            );
+            ctx.stroke();
+          }
+        }
         if (frozen) {
           ctx.strokeStyle = "rgba(124,134,168,.5)";
           ctx.lineWidth = 1;

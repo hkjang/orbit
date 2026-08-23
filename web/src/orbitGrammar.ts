@@ -22,6 +22,8 @@ export const MOMENTUM_BAND = 0.18;
 
 export interface Grammar {
   state: RelationState;
+  /** 고정된 관계인지. 고정되면 침묵만으로는 바깥으로 밀려나지 않습니다. */
+  anchored: boolean;
   /** 마지막 교류 이후 경과 일수. 교류 기록이 아직 없으면 null. */
   dormantDays: number | null;
   label: string;
@@ -83,17 +85,21 @@ export function daysSince(
  * 교류 기록이 아직 없는 사람은 휴면으로 몰지 않고 안정 궤도에서 시작합니다.
  */
 export function readGrammar(
-  node: Pick<OrbitNode, "momentum" | "last_interaction_at">,
+  node: Pick<OrbitNode, "momentum" | "last_interaction_at" | "anchored">,
   now = Date.now(),
 ): Grammar {
   const dormantDays = daysSince(node.last_interaction_at, now);
   const momentum = Number.isFinite(node.momentum) ? node.momentum : 0;
+  const anchored = node.anchored === true;
+  // 고정된 관계는 침묵을 근거로 밀려나지 않습니다. 다만 실제 교류가 줄고 있다면
+  // 그 사실까지 숨기지는 않으므로, momentum이 만든 흐름은 그대로 보여줍니다.
+  const silent = anchored ? null : dormantDays;
   let state: RelationState;
-  if (dormantDays !== null && dormantDays >= DORMANT_DAYS) state = "dormant";
+  if (silent !== null && silent >= DORMANT_DAYS) state = "dormant";
   else if (momentum > MOMENTUM_BAND) state = "approaching";
   else if (
     momentum < -MOMENTUM_BAND ||
-    (dormantDays !== null && dormantDays >= DRIFT_DAYS)
+    (silent !== null && silent >= DRIFT_DAYS)
   )
     state = "drifting";
   else state = "stable";
@@ -102,7 +108,7 @@ export function readGrammar(
     state === "dormant"
       ? -1
       : Math.max(-1, Math.min(1, momentum + (state === "drifting" ? -0.1 : 0)));
-  return { state, dormantDays, vector, ...meta };
+  return { state, dormantDays, anchored, vector, ...meta };
 }
 
 /**

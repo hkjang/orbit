@@ -46,6 +46,7 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 			pr.Put("/{personID}", s.updatePerson)
 			pr.Delete("/{personID}", s.deletePerson)
 			pr.Post("/{personID}/interactions", s.createInteraction)
+			pr.Post("/{personID}/anchor", s.setAnchor)
 		})
 		api.Route("/memories", func(mr chi.Router) {
 			mr.Get("/", s.listMemories)

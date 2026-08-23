@@ -21,6 +21,8 @@ import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import AddCommentRoundedIcon from "@mui/icons-material/AddCommentRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import PushPinRoundedIcon from "@mui/icons-material/PushPinRounded";
+import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import { useNavigate, useParams } from "react-router-dom";
 import { StateChip } from "../components/StateChip";
 import { readGrammar } from "../orbitGrammar";
@@ -40,6 +42,7 @@ export function PersonPage() {
   const [error, setError] = useState("");
   const [edit, setEdit] = useState(false);
   const [interaction, setInteraction] = useState(false);
+  const [anchoring, setAnchoring] = useState(false);
   const load = useCallback(async () => {
     if (!personId) return;
     setError("");
@@ -130,13 +133,52 @@ export function PersonPage() {
                     ))}
                   </Box>
                 </Box>
-                <Button
-                  variant="outlined"
-                  startIcon={<EditRoundedIcon />}
-                  onClick={() => setEdit(true)}
-                >
-                  다듬기
-                </Button>
+                <Box sx={{ display: "flex", gap: 1, flexShrink: 0 }}>
+                  <Button
+                    variant={person.anchored ? "contained" : "outlined"}
+                    color={person.anchored ? "secondary" : "primary"}
+                    disabled={anchoring}
+                    startIcon={
+                      person.anchored ? (
+                        <PushPinRoundedIcon />
+                      ) : (
+                        <PushPinOutlinedIcon />
+                      )
+                    }
+                    title={
+                      person.anchored
+                        ? "고정을 풀면 교류에 따라 다시 궤도가 움직입니다."
+                        : "교류가 뜸해져도 바깥 궤도로 밀려나지 않게 고정합니다."
+                    }
+                    onClick={async () => {
+                      setAnchoring(true);
+                      try {
+                        await api(`/people/${person.id}/anchor`, {
+                          method: "POST",
+                          body: JSON.stringify({ anchored: !person.anchored }),
+                        });
+                        await load();
+                      } catch (e) {
+                        setError(
+                          e instanceof Error
+                            ? e.message
+                            : "고정 상태를 바꾸지 못했습니다.",
+                        );
+                      } finally {
+                        setAnchoring(false);
+                      }
+                    }}
+                  >
+                    {person.anchored ? "고정됨" : "고정하기"}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<EditRoundedIcon />}
+                    onClick={() => setEdit(true)}
+                  >
+                    다듬기
+                  </Button>
+                </Box>
               </Box>
               <Divider sx={{ my: 3 }} />
               <Box
@@ -157,6 +199,8 @@ export function PersonPage() {
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 0.8 }}>
                 {grammar.hint}
+                {grammar.anchored &&
+                  " 고정된 관계라 교류가 뜸해져도 곁에 남습니다."}
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 1 }}>
                 마지막 교류는 {formatDate(person.last_interaction_at)}이에요.

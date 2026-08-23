@@ -35,6 +35,8 @@ export interface Person {
   categories: string[];
   relationship_label: string;
   last_interaction_at?: string;
+  /** 고정된 관계. 교류가 줄어도 바깥 궤도로 밀려나지 않습니다. */
+  anchored?: boolean;
   created_at: string;
 }
 
@@ -52,6 +54,7 @@ export interface OrbitNode {
   last_interaction_at?: string;
   /** 이 사람과 묶인 승인된 기억 수. Memory Nebula의 크기를 정합니다. */
   memory_count?: number;
+  anchored?: boolean;
 }
 
 export interface Memory {

@@ -35,6 +35,7 @@ type Person struct {
 	Categories        []string   `json:"categories"`
 	RelationshipLabel string     `json:"relationship_label"`
 	LastInteractionAt *time.Time `json:"last_interaction_at,omitempty"`
+	Anchored          bool       `json:"anchored"`
 	CreatedAt         time.Time  `json:"created_at"`
 }
 
@@ -59,7 +60,7 @@ func (s *Server) dataKeyVersion(ctx context.Context, userID string, version int)
 func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,p.avatar_url,p.email_cipher,p.phone_cipher,p.note_cipher,p.key_version,p.first_met,p.created_at,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND ($2='' OR p.display_name ILIKE '%'||$2||'%' OR p.company ILIKE '%'||$2||'%') ORDER BY r.importance DESC,p.display_name LIMIT 1000`, u.ID, query)
+	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,p.avatar_url,p.email_cipher,p.phone_cipher,p.note_cipher,p.key_version,p.first_met,p.created_at,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND ($2='' OR p.display_name ILIKE '%'||$2||'%' OR p.company ILIKE '%'||$2||'%') ORDER BY r.importance DESC,p.display_name LIMIT 1000`, u.ID, query)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -72,7 +73,7 @@ func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 		var email, phone, note string
 		var version int
 		var categories []byte
-		if err := rows.Scan(&p.ID, &p.DisplayName, &p.Company, &p.RoleTitle, &p.AvatarURL, &email, &phone, &note, &version, &p.FirstMet, &p.CreatedAt, &p.Importance, &p.Closeness, &p.Momentum, &p.StableX, &p.StableY, &categories, &p.RelationshipLabel, &p.LastInteractionAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.DisplayName, &p.Company, &p.RoleTitle, &p.AvatarURL, &email, &phone, &note, &version, &p.FirstMet, &p.CreatedAt, &p.Importance, &p.Closeness, &p.Momentum, &p.StableX, &p.StableY, &categories, &p.RelationshipLabel, &p.LastInteractionAt, &p.Anchored); err != nil {
 			internalError(w, r, err)
 			return
 		}
@@ -105,7 +106,7 @@ func (s *Server) getPerson(w http.ResponseWriter, r *http.Request) {
 	var email, phone, note string
 	var version int
 	var categories []byte
-	err := s.store.DB.QueryRow(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,p.avatar_url,p.email_cipher,p.phone_cipher,p.note_cipher,p.key_version,p.first_met,p.created_at,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND p.id=$2`, u.ID, personID).Scan(&p.ID, &p.DisplayName, &p.Company, &p.RoleTitle, &p.AvatarURL, &email, &phone, &note, &version, &p.FirstMet, &p.CreatedAt, &p.Importance, &p.Closeness, &p.Momentum, &p.StableX, &p.StableY, &categories, &p.RelationshipLabel, &p.LastInteractionAt)
+	err := s.store.DB.QueryRow(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,p.avatar_url,p.email_cipher,p.phone_cipher,p.note_cipher,p.key_version,p.first_met,p.created_at,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND p.id=$2`, u.ID, personID).Scan(&p.ID, &p.DisplayName, &p.Company, &p.RoleTitle, &p.AvatarURL, &email, &phone, &note, &version, &p.FirstMet, &p.CreatedAt, &p.Importance, &p.Closeness, &p.Momentum, &p.StableX, &p.StableY, &categories, &p.RelationshipLabel, &p.LastInteractionAt, &p.Anchored)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
 		return
@@ -455,9 +456,32 @@ func (s *Server) personInteractions(ctx context.Context, userID, personID string
 	return out, rows.Err()
 }
 
+// setAnchor는 관계를 고정하거나 해제합니다.
+// 전체 인물 수정(PUT)과 분리해, 한 번의 토글이 다른 필드를 덮어쓰지 않게 합니다.
+func (s *Server) setAnchor(w http.ResponseWriter, r *http.Request) {
+	u := userFromContext(r.Context())
+	personID := chi.URLParam(r, "personID")
+	var in struct {
+		Anchored bool `json:"anchored"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	tag, err := s.store.DB.Exec(r.Context(), `UPDATE relationships SET anchored=$3,updated_at=now() WHERE user_id=$1 AND person_id=$2`, u.ID, personID, in.Anchored)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, 404, "not_found", "인물을 찾을 수 없습니다.")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"anchored": in.Anchored})
+}
+
 func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
-	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.avatar_url,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,(SELECT count(*) FROM memories m WHERE m.user_id=p.user_id AND m.person_id=p.id AND m.status='approved') FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 1000`, u.ID)
+	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.avatar_url,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,r.anchored,(SELECT count(*) FROM memories m WHERE m.user_id=p.user_id AND m.person_id=p.id AND m.status='approved') FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 1000`, u.ID)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -470,8 +494,9 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		var importance, closeness, momentum, x, y float64
 		var raw []byte
 		var last *time.Time
+		var anchored bool
 		var memories int
-		if err := rows.Scan(&personID, &name, &avatar, &importance, &closeness, &momentum, &x, &y, &raw, &label, &last, &memories); err != nil {
+		if err := rows.Scan(&personID, &name, &avatar, &importance, &closeness, &momentum, &x, &y, &raw, &label, &last, &anchored, &memories); err != nil {
 			internalError(w, r, err)
 			return
 		}
@@ -480,7 +505,7 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		for _, c := range cats {
 			contexts[c]++
 		}
-		nodes = append(nodes, map[string]any{"id": personID, "name": name, "avatar_url": avatar, "importance": importance, "closeness": closeness, "momentum": momentum, "x": x, "y": y, "categories": cats, "label": label, "last_interaction_at": last, "memory_count": memories})
+		nodes = append(nodes, map[string]any{"id": personID, "name": name, "avatar_url": avatar, "importance": importance, "closeness": closeness, "momentum": momentum, "x": x, "y": y, "categories": cats, "label": label, "last_interaction_at": last, "anchored": anchored, "memory_count": memories})
 	}
 	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "generated_at": time.Now()})
 }
