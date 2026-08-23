@@ -144,7 +144,8 @@ export function OrbitPage() {
                 {rediscover.person_name}님과의 기억 · {rediscover.title}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {formatDate(rediscover.occurred_at)}
+                {formatDate(rediscover.occurred_at)} · 지도 위에 혜성으로
+                다가오고 있어요
               </Typography>
             </Box>
             <Button
@@ -161,6 +162,11 @@ export function OrbitPage() {
         centerName={user?.display_name ?? "나"}
         onSelect={(node) => navigate(`/people/${node.id}`)}
         constellation={constellation || undefined}
+        rediscover={
+          rediscover
+            ? { person_id: rediscover.person_id, title: rediscover.title }
+            : undefined
+        }
       />
       <Alert
         severity="info"

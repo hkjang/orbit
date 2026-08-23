@@ -132,3 +132,14 @@ export function constellationEdges<T extends { px: number; py: number }>(
   }
   return edges;
 }
+
+/**
+ * Memory Nebula 반경.
+ * 기억이 쌓일수록 행성 주위에 성운이 넓어지되, 수집 경쟁이 되지 않도록
+ * 제곱근으로 완만하게 자라고 상한에서 멈춥니다.
+ */
+export function nebulaRadius(memoryCount: number | undefined, radius: number) {
+  const count = Math.max(0, Math.floor(memoryCount ?? 0));
+  if (count === 0) return 0;
+  return radius + 10 + Math.min(Math.sqrt(count), 4.5) * 9;
+}

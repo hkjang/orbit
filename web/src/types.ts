@@ -50,6 +50,8 @@ export interface OrbitNode {
   categories: string[];
   label: string;
   last_interaction_at?: string;
+  /** 이 사람과 묶인 승인된 기억 수. Memory Nebula의 크기를 정합니다. */
+  memory_count?: number;
 }
 
 export interface Memory {

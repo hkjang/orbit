@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   constellationEdges,
+  nebulaRadius,
   daysSince,
   DORMANT_DAYS,
   DRIFT_DAYS,
@@ -93,5 +94,23 @@ describe("constellationEdges", () => {
     // 가까운 쌍이 먼저 이어지고, 먼 성단은 한 줄로만 건너갑니다.
     expect(edges[0]).toEqual([a, b]);
     expect(edges.filter(([x, y]) => x === c || y === c)).toHaveLength(2);
+  });
+});
+
+describe("nebulaRadius", () => {
+  it("draws nothing for a person with no memories", () => {
+    expect(nebulaRadius(0, 20)).toBe(0);
+    expect(nebulaRadius(undefined, 20)).toBe(0);
+  });
+
+  it("grows with memories but flattens out", () => {
+    const one = nebulaRadius(1, 20);
+    const nine = nebulaRadius(9, 20);
+    const many = nebulaRadius(400, 20);
+    expect(one).toBeGreaterThan(20);
+    expect(nine).toBeGreaterThan(one);
+    // 상한(√count = 4.5)에 닿은 뒤로는 더 커지지 않습니다.
+    expect(many).toBe(nebulaRadius(10_000, 20));
+    expect(many).toBe(20 + 10 + 4.5 * 9);
   });
 });

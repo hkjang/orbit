@@ -457,7 +457,7 @@ func (s *Server) personInteractions(ctx context.Context, userID, personID string
 
 func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
-	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.avatar_url,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 1000`, u.ID)
+	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.avatar_url,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,(SELECT count(*) FROM memories m WHERE m.user_id=p.user_id AND m.person_id=p.id AND m.status='approved') FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 1000`, u.ID)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -470,7 +470,8 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		var importance, closeness, momentum, x, y float64
 		var raw []byte
 		var last *time.Time
-		if err := rows.Scan(&personID, &name, &avatar, &importance, &closeness, &momentum, &x, &y, &raw, &label, &last); err != nil {
+		var memories int
+		if err := rows.Scan(&personID, &name, &avatar, &importance, &closeness, &momentum, &x, &y, &raw, &label, &last, &memories); err != nil {
 			internalError(w, r, err)
 			return
 		}
@@ -479,7 +480,7 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		for _, c := range cats {
 			contexts[c]++
 		}
-		nodes = append(nodes, map[string]any{"id": personID, "name": name, "avatar_url": avatar, "importance": importance, "closeness": closeness, "momentum": momentum, "x": x, "y": y, "categories": cats, "label": label, "last_interaction_at": last})
+		nodes = append(nodes, map[string]any{"id": personID, "name": name, "avatar_url": avatar, "importance": importance, "closeness": closeness, "momentum": momentum, "x": x, "y": y, "categories": cats, "label": label, "last_interaction_at": last, "memory_count": memories})
 	}
 	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "generated_at": time.Now()})
 }
