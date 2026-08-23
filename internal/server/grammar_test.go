@@ -132,3 +132,49 @@ func TestMatchesMemoryIgnoresCase(t *testing.T) {
 		t.Fatal("대소문자와 무관하게 찾아야 한다")
 	}
 }
+
+// 소속·주제 꼬리표는 저장 직전에 다듬는다. 다듬지 않으면 "가족"과 "가족 "이
+// 서로 다른 소속이 되어, 화면에서는 같아 보이는데 색과 묶음이 갈린다.
+func TestNormalizeTagsTidiesFreeformLabels(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"앞뒤 공백을 뗀다", []string{"  가족 ", "친구"}, []string{"가족", "친구"}},
+		{"빈 값은 버린다", []string{"가족", "", "   "}, []string{"가족"}},
+		{"같은 것은 한 번만", []string{"가족", "가족", "친구"}, []string{"가족", "친구"}},
+		{"공백만 다른 것도 같은 것으로", []string{"가족", " 가족"}, []string{"가족"}},
+		{"적은 순서를 지킨다", []string{"친구", "가족", "멘토"}, []string{"친구", "가족", "멘토"}},
+		{"가운데 공백은 그대로 둔다", []string{"AI 추진단"}, []string{"AI 추진단"}},
+		{"빈 목록", []string{}, []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeTags(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("%v를 기대했으나 %v", tc.want, got)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("%v를 기대했으나 %v", tc.want, got)
+				}
+			}
+		})
+	}
+}
+
+// 개수 제한은 다듬은 뒤에 세야 한다. 중복 때문에 한도에 걸리면 사용자는
+// 왜 막히는지 알 수 없다.
+func TestPersonInputCountsCategoriesAfterTidying(t *testing.T) {
+	in := &personInput{DisplayName: "김도현", Importance: .5}
+	for i := 0; i < 20; i++ {
+		in.Categories = append(in.Categories, " 가족 ")
+	}
+	if err := validatePersonInput(in); err != nil {
+		t.Fatalf("같은 소속 스무 번은 하나로 줄어야 한다: %v", err)
+	}
+	if len(in.Categories) != 1 || in.Categories[0] != "가족" {
+		t.Fatalf("소속이 %v", in.Categories)
+	}
+}

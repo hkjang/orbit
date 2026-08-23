@@ -62,6 +62,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "validation_error", "기억의 제목과 내용을 입력해 주세요.")
 		return
 	}
+	in.Topics = normalizeTags(in.Topics)
 	if len(in.Topics) > 20 {
 		writeError(w, 400, "validation_error", "주제는 최대 20개까지 입력할 수 있습니다.")
 		return

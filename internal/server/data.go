@@ -203,6 +203,26 @@ type personInput struct {
 	RelationshipLabel string   `json:"relationship_label"`
 }
 
+// normalizeTags는 소속·주제처럼 사용자가 자유롭게 적는 꼬리표를 다듬는다.
+//
+// 앞뒤 공백을 떼고, 빈 값을 버리고, 같은 것을 한 번만 남긴다. 다듬지 않으면
+// "가족"과 "가족 "이 서로 다른 소속이 되어 화면에서는 같아 보이는데 색과
+// 묶음은 갈린다. 프론트엔드가 정리해 주더라도 MCP나 API 직접 호출은 무엇이든
+// 보낼 수 있으므로 저장 직전인 여기서 막는다.
+func normalizeTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	seen := map[string]bool{}
+	for _, tag := range tags {
+		trimmed := strings.TrimSpace(tag)
+		if trimmed == "" || seen[trimmed] {
+			continue
+		}
+		seen[trimmed] = true
+		out = append(out, trimmed)
+	}
+	return out
+}
+
 func validatePersonInput(in *personInput) error {
 	in.DisplayName = strings.TrimSpace(in.DisplayName)
 	if in.DisplayName == "" || len([]rune(in.DisplayName)) > 120 {
@@ -214,6 +234,9 @@ func validatePersonInput(in *personInput) error {
 	if in.Importance == 0 {
 		in.Importance = .5
 	}
+	// 개수 제한은 다듬은 뒤에 센다. 중복이나 빈 값 때문에 한도에 걸리면
+	// 사용자는 왜 막히는지 알 수 없다.
+	in.Categories = normalizeTags(in.Categories)
 	if len(in.Categories) > 12 {
 		return errors.New("관계 맥락은 최대 12개까지 지정할 수 있습니다")
 	}

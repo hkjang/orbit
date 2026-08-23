@@ -239,6 +239,7 @@ func requestHasScope(r *http.Request, scope string) bool {
 }
 
 func (s *Server) mcpCreateMemory(r *http.Request, u User, personID, title, content string, topics []string) (map[string]any, error) {
+	topics = normalizeTags(topics)
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	if title == "" || content == "" {
