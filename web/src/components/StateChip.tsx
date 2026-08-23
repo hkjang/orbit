@@ -10,7 +10,9 @@ export function StateChip({
   person,
   hideStable,
 }: {
-  person: Pick<OrbitNode, "momentum" | "last_interaction_at">;
+  // anchored를 빠뜨리면 타입상으로는 통과하지만(선택 필드), 고정된 관계를
+  // 다크 오빗으로 잘못 표시하게 된다. readGrammar가 쓰는 값은 모두 받는다.
+  person: Pick<OrbitNode, "momentum" | "last_interaction_at" | "anchored">;
   hideStable?: boolean;
 }) {
   const grammar = readGrammar(person);

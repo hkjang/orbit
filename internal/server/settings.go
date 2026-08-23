@@ -343,7 +343,9 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.DB.Query(r.Context(), `SELECT a.id,a.actor_id,coalesce(u.display_name,'시스템'),a.action,a.resource_type,a.resource_id,a.ip_address,a.detail,a.created_at FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 500`)
+	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	query := escapeLike(strings.TrimSpace(r.URL.Query().Get("q")))
+	rows, err := s.store.DB.Query(r.Context(), `SELECT a.id,a.actor_id,coalesce(u.display_name,'시스템'),a.action,a.resource_type,a.resource_id,a.ip_address,a.detail,a.created_at FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id WHERE ($1='' OR a.action=$1) AND ($2='' OR a.action ILIKE '%'||$2||'%' ESCAPE '\' OR a.resource_type ILIKE '%'||$2||'%' ESCAPE '\' OR a.resource_id ILIKE '%'||$2||'%' ESCAPE '\' OR a.ip_address ILIKE '%'||$2||'%' ESCAPE '\' OR coalesce(u.display_name,'') ILIKE '%'||$2||'%' ESCAPE '\') ORDER BY a.created_at DESC LIMIT 500`, action, query)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -366,7 +368,32 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(row.Detail, &detail)
 		items = append(items, map[string]any{"id": row.ID, "actor_id": row.ActorID, "actor_name": row.ActorName, "action": row.Action, "resource_type": row.ResourceType, "resource_id": row.ResourceID, "ip_address": row.IPAddress, "detail": detail, "created_at": row.CreatedAt})
 	}
-	writeJSON(w, 200, map[string]any{"audit_logs": items})
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	// 고를 수 있는 액션 목록은 로그에 실제로 있는 것만 내려준다. 화면이 종류를
+	// 하드코딩하면 새 감사 액션이 생겨도 거를 방법이 없다.
+	actionRows, err := s.store.DB.Query(r.Context(), `SELECT DISTINCT action FROM audit_logs ORDER BY action`)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	defer actionRows.Close()
+	actions := []string{}
+	for actionRows.Next() {
+		var name string
+		if err := actionRows.Scan(&name); err != nil {
+			internalError(w, r, err)
+			return
+		}
+		actions = append(actions, name)
+	}
+	if err := actionRows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"audit_logs": items, "actions": actions})
 }
 
 func validScope(scope string) bool {

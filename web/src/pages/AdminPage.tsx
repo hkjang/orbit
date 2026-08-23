@@ -25,6 +25,7 @@ import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
 import { api, formatDate } from "../api";
+import { auditLabel } from "../auditLabels";
 import { useAuth } from "../AuthContext";
 import { PageHeader } from "../components/PageHeader";
 import { ErrorView, LoadingView } from "../components/StateViews";
@@ -1006,11 +1007,23 @@ interface Audit {
 }
 function AuditPanel() {
   const [logs, setLogs] = useState<Audit[]>();
+  const [actions, setActions] = useState<string[]>([]);
+  const [action, setAction] = useState("");
+  const [query, setQuery] = useState("");
   useEffect(() => {
-    api<{ audit_logs: Audit[] }>("/admin/audit").then((v) =>
-      setLogs(v.audit_logs),
-    );
-  }, []);
+    const timer = setTimeout(() => {
+      const search = new URLSearchParams();
+      if (action) search.set("action", action);
+      if (query) search.set("q", query);
+      api<{ audit_logs: Audit[]; actions: string[] }>(
+        `/admin/audit?${search}`,
+      ).then((v) => {
+        setLogs(v.audit_logs);
+        setActions(v.actions ?? []);
+      });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [action, query]);
   if (!logs) return <LoadingView />;
   return (
     <Card>
@@ -1019,6 +1032,38 @@ function AuditPanel() {
         <Typography color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
           인증, 설정, 키와 민감 데이터 변경 이력을 확인합니다.
         </Typography>
+        <Box
+          sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", mb: 2.5 }}
+        >
+          <TextField
+            size="small"
+            placeholder="행위자, 대상, IP로 찾기"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            sx={{ flex: "1 1 260px", maxWidth: 360 }}
+          />
+          <TextField
+            select
+            size="small"
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            aria-label="행위 종류"
+            slotProps={{ select: { displayEmpty: true } }}
+            sx={{ minWidth: 200 }}
+          >
+            <MenuItem value="">모든 행위</MenuItem>
+            {actions.map((name) => (
+              <MenuItem key={name} value={name}>
+                {auditLabel(name)}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Box>
+        {logs.length === 0 && (
+          <Typography color="text.secondary" sx={{ py: 3 }}>
+            조건에 맞는 기록이 없습니다.
+          </Typography>
+        )}
         <Box sx={{ overflowX: "auto" }}>
           <Box sx={{ minWidth: 760 }}>
             {logs.map((log) => (
@@ -1038,9 +1083,12 @@ function AuditPanel() {
                 </Typography>
                 <Typography>{log.actor_name}</Typography>
                 <Box>
-                  <Typography sx={{ fontWeight: 700 }}>{log.action}</Typography>
+                  <Typography sx={{ fontWeight: 700 }}>
+                    {auditLabel(log.action)}
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {log.resource_type} · {log.resource_id.slice(0, 12)}
+                    {log.action} · {log.resource_type} ·{" "}
+                    {log.resource_id.slice(0, 12)}
                   </Typography>
                 </Box>
                 <Typography variant="body2" color="text.secondary">
