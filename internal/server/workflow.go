@@ -130,7 +130,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	personID := r.URL.Query().Get("person_id")
 	status := r.URL.Query().Get("status")
-	memories, err := s.queryMemories(r.Context(), u.ID, personID, status)
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	memories, err := s.searchMemories(r.Context(), u.ID, personID, status, query)
 	if err != nil {
 		internalError(w, r, err)
 		return
@@ -138,8 +139,51 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"memories": memories, "count": len(memories)})
 }
 
+// searchMemories는 조회한 기억을 검색어로 한 번 더 거른다.
+//
+// 본문이 암호문이라 SQL로는 훑을 수 없다. 다만 이 경로는 어차피 돌려줄 기억을
+// 모두 복호화하므로, 복호화한 뒤 거르는 데 추가 비용이 거의 없다. 대신 검색할
+// 때는 훑는 범위를 넓혀, 최근 것만 걸리고 옛 기억이 조용히 빠지지 않게 한다.
+func (s *Server) searchMemories(ctx context.Context, userID, personID, status, query string) ([]Memory, error) {
+	limit := 500
+	if query != "" {
+		limit = 2000
+	}
+	memories, err := s.queryMemoriesLimit(ctx, userID, personID, status, limit)
+	if err != nil || query == "" {
+		return memories, err
+	}
+	needle := strings.ToLower(query)
+	out := []Memory{}
+	for _, m := range memories {
+		if matchesMemory(m, needle) {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+// matchesMemory는 제목·본문·주제·인물 이름 어디에든 걸리면 참이다.
+func matchesMemory(m Memory, needle string) bool {
+	if strings.Contains(strings.ToLower(m.Title), needle) ||
+		strings.Contains(strings.ToLower(m.Content), needle) ||
+		strings.Contains(strings.ToLower(m.PersonName), needle) {
+		return true
+	}
+	for _, topic := range m.Topics {
+		if strings.Contains(strings.ToLower(topic), needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) queryMemories(ctx context.Context, userID, personID, status string) ([]Memory, error) {
-	rows, err := s.store.DB.Query(ctx, `SELECT m.id,m.person_id,coalesce(p.display_name,''),m.title,m.content_cipher,m.key_version,m.occurred_at,m.source_type,m.source_reference,m.topics,m.status,m.created_at FROM memories m LEFT JOIN people p ON p.id=m.person_id WHERE m.user_id=$1 AND ($2='' OR m.person_id=NULLIF($2,'')::uuid) AND ($3='' OR m.status=$3) ORDER BY coalesce(m.occurred_at,m.created_at) DESC LIMIT 500`, userID, personID, status)
+	return s.queryMemoriesLimit(ctx, userID, personID, status, 500)
+}
+
+func (s *Server) queryMemoriesLimit(ctx context.Context, userID, personID, status string, limit int) ([]Memory, error) {
+	rows, err := s.store.DB.Query(ctx, `SELECT m.id,m.person_id,coalesce(p.display_name,''),m.title,m.content_cipher,m.key_version,m.occurred_at,m.source_type,m.source_reference,m.topics,m.status,m.created_at FROM memories m LEFT JOIN people p ON p.id=m.person_id WHERE m.user_id=$1 AND ($2='' OR m.person_id=NULLIF($2,'')::uuid) AND ($3='' OR m.status=$3) ORDER BY coalesce(m.occurred_at,m.created_at) DESC LIMIT $4`, userID, personID, status, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +267,33 @@ func (s *Server) listApprovals(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, a)
 	}
-	writeJSON(w, 200, map[string]any{"enabled": true, "can_review": canReview, "approvals": items})
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	// 상태별 건수는 목록과 별개로 센다. 목록은 고른 상태만 담기 때문에
+	// 목록에서 세면 "검토 대기 3건"을 보고 있을 때 다른 상태의 존재를 알 수 없다.
+	counts := map[string]int{}
+	countRows, err := s.store.DB.Query(r.Context(), `SELECT a.status,count(*) FROM approval_requests a WHERE ($1 OR a.requester_id=$2) GROUP BY a.status`, canReview, u.ID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	defer countRows.Close()
+	for countRows.Next() {
+		var status string
+		var count int
+		if err := countRows.Scan(&status, &count); err != nil {
+			internalError(w, r, err)
+			return
+		}
+		counts[status] = count
+	}
+	if err := countRows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"enabled": true, "can_review": canReview, "approvals": items, "counts": counts})
 }
 
 func (s *Server) reviewApproval(w http.ResponseWriter, r *http.Request) {

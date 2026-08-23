@@ -104,3 +104,31 @@ func TestEscapeLikeKeepsWildcardsLiteral(t *testing.T) {
 		}
 	}
 }
+
+// 기억 검색은 제목만이 아니라 본문·주제·인물까지 훑어야 한다.
+// 본문은 암호문이라 SQL이 아니라 복호화 뒤 Go에서 거른다.
+func TestMatchesMemoryLooksEverywhere(t *testing.T) {
+	m := Memory{
+		Title:      "제주 워크숍",
+		Content:    "바닷가에서 로드맵을 정리했다",
+		PersonName: "김도현",
+		Topics:     []string{"전략", "Offsite"},
+	}
+	for _, needle := range []string{"제주", "로드맵", "김도현", "전략", "offsite"} {
+		if !matchesMemory(m, needle) {
+			t.Fatalf("%q로 찾지 못했다", needle)
+		}
+	}
+	for _, needle := range []string{"부산", "예산"} {
+		if matchesMemory(m, needle) {
+			t.Fatalf("%q는 걸리면 안 된다", needle)
+		}
+	}
+}
+
+func TestMatchesMemoryIgnoresCase(t *testing.T) {
+	m := Memory{Title: "Alpha Kickoff", Topics: []string{}}
+	if !matchesMemory(m, "alpha") {
+		t.Fatal("대소문자와 무관하게 찾아야 한다")
+	}
+}

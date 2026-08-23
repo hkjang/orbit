@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -33,28 +34,48 @@ interface Approval {
   created_at: string;
   reviewed_at?: string;
 }
+const APPROVAL_FILTERS = [
+  { value: "pending", label: "검토 대기" },
+  { value: "approved", label: "승인됨" },
+  { value: "rejected", label: "반려됨" },
+  { value: "", label: "전체" },
+];
+
 export function ApprovalsPage() {
   const { user } = useAuth();
+  const [params, setParams] = useSearchParams();
   const [data, setData] = useState<{
     enabled: boolean;
     can_review: boolean;
     approvals: Approval[];
+    counts: Record<string, number>;
   }>();
   const [error, setError] = useState("");
   const [review, setReview] = useState<{
     item: Approval;
     decision: "approved" | "rejected";
   }>();
+  // 기본은 실제로 처리할 항목이다. 이력까지 한꺼번에 보이면 할 일이 묻힌다.
+  const status = params.get("status") ?? "pending";
+  const setStatus = (value: string) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set("status", value);
+    else next.set("status", "all");
+    setParams(next, { replace: true });
+  };
+  const queried = status === "all" ? "" : status;
   const load = useCallback(async () => {
     try {
-      setData(await api("/approvals?status="));
+      setData(
+        await api(`/approvals?status=${encodeURIComponent(queried)}`),
+      );
       setError("");
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "검토 요청을 불러오지 못했습니다.",
       );
     }
-  }, []);
+  }, [queried]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -80,10 +101,48 @@ export function ApprovalsPage() {
             : "팀원이 남긴 관계 기록을 맥락과 함께 검토합니다."
         }
       />
+      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mb: 3 }}>
+        {APPROVAL_FILTERS.map((option) => {
+          const selected =
+            option.value === "" ? status === "all" : status === option.value;
+          const count =
+            option.value === ""
+              ? Object.values(data.counts ?? {}).reduce((a, b) => a + b, 0)
+              : (data.counts?.[option.value] ?? 0);
+          return (
+            <Chip
+              key={option.value || "all"}
+              label={`${option.label} ${count}`}
+              variant={selected ? "filled" : "outlined"}
+              color={
+                selected
+                  ? option.value === "pending"
+                    ? "warning"
+                    : "primary"
+                  : "default"
+              }
+              clickable
+              aria-pressed={selected}
+              onClick={() => setStatus(option.value)}
+            />
+          );
+        })}
+      </Box>
       {data.approvals.length === 0 ? (
         <EmptyView
-          title="검토할 요청이 없어요"
-          description="현재 대기 중이거나 처리된 요청이 없습니다."
+          title={
+            status === "pending"
+              ? "지금 검토할 요청이 없어요"
+              : "이 상태의 요청이 없어요"
+          }
+          description="처리된 이력까지 보려면 전체를 눌러 보세요."
+          action={
+            status !== "all" && (
+              <Button variant="outlined" onClick={() => setStatus("")}>
+                전체 보기
+              </Button>
+            )
+          }
         />
       ) : (
         <Box sx={{ display: "grid", gap: 1.5 }}>

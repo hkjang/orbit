@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -10,27 +11,52 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  InputAdornment,
   MenuItem,
   TextField,
   Typography,
 } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
 import { api, formatDate } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
 import type { Memory, Person } from "../types";
 
+const STATUS_FILTERS = [
+  { value: "", label: "전체" },
+  { value: "approved", label: "승인됨" },
+  { value: "pending", label: "검토 대기" },
+  { value: "rejected", label: "반려됨" },
+];
+
 export function MemoriesPage() {
+  const [params, setParams] = useSearchParams();
   const [memories, setMemories] = useState<Memory[]>();
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
+  // 무엇을 보고 있는지는 주소에 남긴다. 기억은 다시 찾아올 대상이라,
+  // 링크로 돌아왔을 때 같은 화면이 나와야 한다.
+  const query = params.get("q") ?? "";
+  const personId = params.get("person") ?? "";
+  const status = params.get("status") ?? "";
+  const setParam = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  };
   const load = useCallback(async () => {
     setError("");
     try {
+      const search = new URLSearchParams();
+      if (query) search.set("q", query);
+      if (personId) search.set("person_id", personId);
+      if (status) search.set("status", status);
       const [m, p] = await Promise.all([
-        api<{ memories: Memory[] }>("/memories/"),
+        api<{ memories: Memory[] }>(`/memories/?${search}`),
         api<{ people: Person[] }>("/people/"),
       ]);
       setMemories(m.memories);
@@ -38,10 +64,12 @@ export function MemoriesPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "기억을 불러오지 못했습니다.");
     }
-  }, []);
+  }, [query, personId, status]);
   useEffect(() => {
-    void load();
+    const timer = setTimeout(() => void load(), 200);
+    return () => clearTimeout(timer);
   }, [load]);
+  const filtered = Boolean(query || personId || status);
   return (
     <>
       <PageHeader
@@ -57,20 +85,89 @@ export function MemoriesPage() {
           </Button>
         }
       />
+      <Box
+        sx={{
+          display: "flex",
+          gap: 1.5,
+          flexWrap: "wrap",
+          alignItems: "center",
+          mb: 3,
+        }}
+      >
+        <TextField
+          placeholder="제목, 내용, 주제, 사람으로 찾기"
+          value={query}
+          onChange={(e) => setParam("q", e.target.value)}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchRoundedIcon />
+                </InputAdornment>
+              ),
+            },
+          }}
+          sx={{ flex: "1 1 320px", maxWidth: 460 }}
+        />
+        <TextField
+          select
+          value={personId}
+          onChange={(e) => setParam("person", e.target.value)}
+          aria-label="사람으로 좁히기"
+          // 값이 비어 있을 때도 "모든 사람"이 보이도록 한다.
+          slotProps={{ select: { displayEmpty: true } }}
+          sx={{ minWidth: 170 }}
+        >
+          <MenuItem value="">모든 사람</MenuItem>
+          {people.map((person) => (
+            <MenuItem key={person.id} value={person.id}>
+              {person.display_name}
+            </MenuItem>
+          ))}
+        </TextField>
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          {STATUS_FILTERS.map((option) => (
+            <Chip
+              key={option.value || "all"}
+              label={option.label}
+              variant={status === option.value ? "filled" : "outlined"}
+              color={status === option.value ? "primary" : "default"}
+              clickable
+              aria-pressed={status === option.value}
+              onClick={() => setParam("status", option.value)}
+            />
+          ))}
+        </Box>
+      </Box>
       {error ? (
         <ErrorView message={error} retry={load} />
       ) : !memories ? (
         <LoadingView />
       ) : memories.length === 0 ? (
-        <EmptyView
-          title="아직 꺼내볼 기억이 없어요"
-          description="짧은 문장 하나로 시작해도 충분합니다. Orbit이 시간과 사람을 이어줍니다."
-          action={
-            <Button variant="contained" onClick={() => setOpen(true)}>
-              첫 기억 남기기
-            </Button>
-          }
-        />
+        filtered ? (
+          <EmptyView
+            title="이 조건에 맞는 기억이 없어요"
+            description="다른 사람이나 기간을 골라 보거나, 검색어를 줄여 보세요."
+            action={
+              <Button
+                variant="outlined"
+                onClick={() => setParams(new URLSearchParams(), { replace: true })}
+              >
+                조건 지우기
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyView
+            title="아직 꺼내볼 기억이 없어요"
+            description="짧은 문장 하나로 시작해도 충분합니다. Orbit이 시간과 사람을 이어줍니다."
+            action={
+              <Button variant="contained" onClick={() => setOpen(true)}>
+                첫 기억 남기기
+              </Button>
+            }
+          />
+        )
       ) : (
         <Box
           sx={{

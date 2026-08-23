@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Avatar,
   Box,
@@ -8,18 +8,28 @@ import {
   CardContent,
   Chip,
   InputAdornment,
+  MenuItem,
   TextField,
   Typography,
 } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import NorthEastRoundedIcon from "@mui/icons-material/NorthEastRounded";
+import PushPinRoundedIcon from "@mui/icons-material/PushPinRounded";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, formatDate } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { StateChip } from "../components/StateChip";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
 import { PersonFormDialog } from "../components/PersonFormDialog";
+import { STATE_META, STATE_ORDER, type RelationState } from "../orbitGrammar";
+import {
+  countByState,
+  filterByState,
+  isPeopleSort,
+  SORTS,
+  sortPeople,
+} from "../peopleView";
 import type { Person } from "../types";
 
 export function PeoplePage() {
@@ -29,6 +39,17 @@ export function PeoplePage() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [open, setOpen] = useState(params.get("new") === "1");
+  // 고른 상태와 정렬은 URL에 남긴다. 뒤로가기로 돌아오거나 링크로 건네도
+  // 같은 화면이 나와야 "멀어지는 중인 사람들"이 하나의 장소가 된다.
+  const state = (params.get("state") ?? "") as RelationState | "";
+  const sortParam = params.get("sort");
+  const sort = isPeopleSort(sortParam) ? sortParam : "importance";
+  const setParam = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  };
   const load = useCallback(async () => {
     setError("");
     try {
@@ -44,6 +65,11 @@ export function PeoplePage() {
     const t = setTimeout(() => void load(), 200);
     return () => clearTimeout(t);
   }, [load]);
+  const counts = useMemo(() => countByState(people ?? []), [people]);
+  const shown = useMemo(
+    () => sortPeople(filterByState(people ?? [], state), sort),
+    [people, state, sort],
+  );
   const close = () => {
     setOpen(false);
     if (params.has("new")) {
@@ -78,8 +104,66 @@ export function PeoplePage() {
             </InputAdornment>
           ),
         } }}
-        sx={{ maxWidth: 560, mb: 3 }}
+        sx={{ maxWidth: 560, mb: 2 }}
       />
+      {people && people.length > 0 && (
+        <Box
+          sx={{
+            display: "flex",
+            gap: 1,
+            flexWrap: "wrap",
+            alignItems: "center",
+            mb: 3,
+          }}
+        >
+          <Chip
+            label={`전체 ${people.length}`}
+            variant={state ? "outlined" : "filled"}
+            color={state ? "default" : "primary"}
+            clickable
+            aria-pressed={!state}
+            onClick={() => setParam("state", "")}
+          />
+          {STATE_ORDER.filter((s) => counts[s]).map((s) => (
+            <Chip
+              key={s}
+              label={`${STATE_META[s].label} ${counts[s]}`}
+              title={STATE_META[s].hint}
+              variant={state === s ? "filled" : "outlined"}
+              color={state === s ? "primary" : "default"}
+              clickable
+              aria-pressed={state === s}
+              icon={
+                <Box
+                  component="span"
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    bgcolor: STATE_META[s].tone,
+                    ml: "9px!important",
+                  }}
+                />
+              }
+              onClick={() => setParam("state", state === s ? "" : s)}
+            />
+          ))}
+          <TextField
+            select
+            size="small"
+            value={sort}
+            onChange={(e) => setParam("sort", e.target.value)}
+            aria-label="정렬"
+            sx={{ minWidth: 140, ml: { sm: "auto" } }}
+          >
+            {SORTS.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Box>
+      )}
       {error ? (
         <ErrorView message={error} retry={load} />
       ) : !people ? (
@@ -100,6 +184,16 @@ export function PeoplePage() {
             )
           }
         />
+      ) : shown.length === 0 ? (
+        <EmptyView
+          title={`${state ? STATE_META[state].label : "해당"} 궤도에는 아무도 없어요`}
+          description="다행일 수도 있습니다. 다른 상태를 골라 보세요."
+          action={
+            <Button variant="outlined" onClick={() => setParam("state", "")}>
+              전체 보기
+            </Button>
+          }
+        />
       ) : (
         <Box
           sx={{
@@ -108,7 +202,7 @@ export function PeoplePage() {
             gap: 2,
           }}
         >
-          {people.map((person) => (
+          {shown.map((person) => (
             <Card key={person.id}>
               <CardActionArea
                 onClick={() => navigate(`/people/${person.id}`)}
@@ -143,6 +237,15 @@ export function PeoplePage() {
                       <Chip key={c} size="small" label={c} />
                     ))}
                     <StateChip person={person} hideStable />
+                    {person.anchored && (
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        icon={<PushPinRoundedIcon sx={{ fontSize: 14 }} />}
+                        label="고정"
+                        title="교류가 뜸해져도 바깥 궤도로 밀려나지 않습니다."
+                      />
+                    )}
                   </Box>
                   <Typography
                     variant="body2"
