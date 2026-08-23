@@ -22,6 +22,8 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import AddCommentRoundedIcon from "@mui/icons-material/AddCommentRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import { useNavigate, useParams } from "react-router-dom";
+import { StateChip } from "../components/StateChip";
+import { readGrammar } from "../orbitGrammar";
 import { api, formatDate } from "../api";
 import { ErrorView, LoadingView, EmptyView } from "../components/StateViews";
 import { PersonFormDialog } from "../components/PersonFormDialog";
@@ -59,12 +61,13 @@ export function PersonPage() {
         new Date().getFullYear() - new Date(person.first_met).getFullYear(),
       )
     : undefined;
-  const trend =
-    person.momentum > 0.15
-      ? "최근 함께하는 시간이 많아졌어요"
-      : person.momentum < -0.15
-        ? "요즘은 조금 먼 궤도에 있어요"
-        : "편안한 궤도를 이어가고 있어요";
+  const grammar = readGrammar(person);
+  const trend = {
+    approaching: "최근 함께하는 시간이 많아졌어요",
+    stable: "편안한 궤도를 이어가고 있어요",
+    drifting: "요즘은 조금 먼 궤도에 있어요",
+    dormant: "한동안 서로의 소식이 닿지 않았어요",
+  }[grammar.state];
   return (
     <>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3 }}>
@@ -136,11 +139,24 @@ export function PersonPage() {
                 </Button>
               </Box>
               <Divider sx={{ my: 3 }} />
-              <Typography variant="overline" color="primary.light">
-                NOW IN ORBIT
-              </Typography>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.2,
+                  flexWrap: "wrap",
+                }}
+              >
+                <Typography variant="overline" color="primary.light">
+                  NOW IN ORBIT
+                </Typography>
+                <StateChip person={person} />
+              </Box>
               <Typography variant="h3" sx={{ mt: 0.5 }}>
                 {trend}
+              </Typography>
+              <Typography color="text.secondary" sx={{ mt: 0.8 }}>
+                {grammar.hint}
               </Typography>
               <Typography color="text.secondary" sx={{ mt: 1 }}>
                 마지막 교류는 {formatDate(person.last_interaction_at)}이에요.

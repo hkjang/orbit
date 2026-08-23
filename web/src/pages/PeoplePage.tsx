@@ -17,6 +17,7 @@ import NorthEastRoundedIcon from "@mui/icons-material/NorthEastRounded";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, formatDate } from "../api";
 import { PageHeader } from "../components/PageHeader";
+import { StateChip } from "../components/StateChip";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
 import { PersonFormDialog } from "../components/PersonFormDialog";
 import type { Person } from "../types";
@@ -141,14 +142,7 @@ export function PeoplePage() {
                     {person.categories.slice(0, 3).map((c) => (
                       <Chip key={c} size="small" label={c} />
                     ))}
-                    {person.momentum > 0.15 && (
-                      <Chip
-                        size="small"
-                        color="success"
-                        variant="outlined"
-                        label="요즘 가까워짐"
-                      />
-                    )}
+                    <StateChip person={person} hideStable />
                   </Box>
                   <Typography
                     variant="body2"

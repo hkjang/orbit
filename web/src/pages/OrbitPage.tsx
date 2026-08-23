@@ -15,6 +15,7 @@ import { api, formatDate } from "../api";
 import { useAuth } from "../AuthContext";
 import { OrbitCanvas } from "../components/OrbitCanvas";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
+import { STATE_META, STATE_ORDER } from "../orbitGrammar";
 import type { OrbitNode } from "../types";
 
 export function OrbitPage() {
@@ -22,7 +23,7 @@ export function OrbitPage() {
   const navigate = useNavigate();
   const [nodes, setNodes] = useState<OrbitNode[]>();
   const [contexts, setContexts] = useState<Record<string, number>>({});
-  const [selectedContext, setSelectedContext] = useState("");
+  const [constellation, setConstellation] = useState("");
   const [rediscover, setRediscover] = useState<{
     person_id: string;
     person_name: string;
@@ -101,11 +102,13 @@ export function OrbitPage() {
               <Chip
                 key={name}
                 label={`${name} ${count}`}
-                variant={selectedContext === name ? "filled" : "outlined"}
-                color={selectedContext === name ? "primary" : "default"}
+                variant={constellation === name ? "filled" : "outlined"}
+                color={constellation === name ? "primary" : "default"}
                 clickable
+                aria-pressed={constellation === name}
+                title={`${name} 별자리로 잇기`}
                 onClick={() =>
-                  setSelectedContext((current) => (current === name ? "" : name))
+                  setConstellation((current) => (current === name ? "" : name))
                 }
               />
             ))}
@@ -154,21 +157,41 @@ export function OrbitPage() {
         </Card>
       )}
       <OrbitCanvas
-        nodes={
-          selectedContext
-            ? nodes.filter((node) => node.categories.includes(selectedContext))
-            : nodes
-        }
+        nodes={nodes}
         centerName={user?.display_name ?? "나"}
         onSelect={(node) => navigate(`/people/${node.id}`)}
+        constellation={constellation || undefined}
       />
       <Alert
         severity="info"
         icon={false}
         sx={{ mt: 2, bgcolor: "rgba(120,183,241,.07)" }}
       >
-        행성의 크기는 장기 중요도, 거리는 최근 관계 활성도, 초록 궤적은
-        가까워지는 흐름을 나타냅니다. 숫자로 관계를 평가하지 않습니다.
+        <Typography variant="body2" sx={{ mb: 1 }}>
+          크기는 중요도, 거리는 친밀도, 화살표는 관계가 지금 움직이는 방향입니다.
+          숫자로 관계를 평가하지 않습니다.
+        </Typography>
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          {STATE_ORDER.map((state) => (
+            <Box
+              key={state}
+              sx={{ display: "flex", alignItems: "center", gap: 0.8 }}
+            >
+              <Box
+                sx={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: "50%",
+                  bgcolor: STATE_META[state].tone,
+                  flexShrink: 0,
+                }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                <b>{STATE_META[state].label}</b> · {STATE_META[state].hint}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
       </Alert>
     </Box>
   );
