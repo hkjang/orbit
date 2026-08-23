@@ -16,13 +16,14 @@ import { useAuth } from "../AuthContext";
 import { OrbitCanvas } from "../components/OrbitCanvas";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
 import { STATE_META, STATE_ORDER } from "../orbitGrammar";
-import type { OrbitNode } from "../types";
+import type { OrbitLink, OrbitNode } from "../types";
 
 export function OrbitPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [nodes, setNodes] = useState<OrbitNode[]>();
   const [contexts, setContexts] = useState<Record<string, number>>({});
+  const [links, setLinks] = useState<OrbitLink[]>([]);
   const [constellation, setConstellation] = useState("");
   const [rediscover, setRediscover] = useState<{
     person_id: string;
@@ -35,11 +36,16 @@ export function OrbitPage() {
     setError("");
     try {
       const [orbit, discovery] = await Promise.all([
-        api<{ nodes: OrbitNode[]; contexts: Record<string, number> }>("/orbit"),
+        api<{
+          nodes: OrbitNode[];
+          contexts: Record<string, number>;
+          links: OrbitLink[];
+        }>("/orbit"),
         api<{ item: typeof rediscover }>("/rediscover"),
       ]);
       setNodes(orbit.nodes);
       setContexts(orbit.contexts);
+      setLinks(orbit.links ?? []);
       setRediscover(discovery.item);
     } catch (e) {
       setError(e instanceof Error ? e.message : "우주를 불러오지 못했습니다.");
@@ -167,6 +173,7 @@ export function OrbitPage() {
             ? { person_id: rediscover.person_id, title: rediscover.title }
             : undefined
         }
+        links={links}
       />
       <Alert
         severity="info"

@@ -479,6 +479,109 @@ func (s *Server) setAnchor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"anchored": in.Anchored})
 }
 
+var linkKinds = map[string]string{
+	"colleague": "함께 일한 사이",
+	"family":    "가족",
+	"friend":    "친구",
+	"community": "같은 모임",
+	"knows":     "아는 사이",
+}
+
+// personLinks는 두 사람을 잇는 간선을 방향 없이 다룹니다.
+// 저장은 항상 person_a < person_b로 정규화해 같은 쌍이 두 번 들어가지 않게 합니다.
+func normalizeLink(a, b string) (string, string) {
+	if a > b {
+		return b, a
+	}
+	return a, b
+}
+
+func (s *Server) listPersonLinks(w http.ResponseWriter, r *http.Request) {
+	u := userFromContext(r.Context())
+	personID := chi.URLParam(r, "personID")
+	rows, err := s.store.DB.Query(r.Context(), `SELECT l.id,l.kind,l.strength,p.id,p.display_name,p.company,p.role_title FROM person_links l JOIN people p ON p.id = CASE WHEN l.person_a=$2 THEN l.person_b ELSE l.person_a END WHERE l.user_id=$1 AND $2 IN (l.person_a,l.person_b) ORDER BY l.strength DESC,p.display_name`, u.ID, personID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	defer rows.Close()
+	links := make([]map[string]any, 0)
+	for rows.Next() {
+		var linkID, kind, otherID, otherName, company, roleTitle string
+		var strength float64
+		if err := rows.Scan(&linkID, &kind, &strength, &otherID, &otherName, &company, &roleTitle); err != nil {
+			internalError(w, r, err)
+			return
+		}
+		links = append(links, map[string]any{"id": linkID, "kind": kind, "kind_label": linkKinds[kind], "strength": strength, "person_id": otherID, "person_name": otherName, "company": company, "role_title": roleTitle})
+	}
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"links": links, "count": len(links)})
+}
+
+func (s *Server) createPersonLink(w http.ResponseWriter, r *http.Request) {
+	u := userFromContext(r.Context())
+	personID := chi.URLParam(r, "personID")
+	var in struct {
+		PersonID string  `json:"person_id"`
+		Kind     string  `json:"kind"`
+		Strength float64 `json:"strength"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if in.Kind == "" {
+		in.Kind = "knows"
+	}
+	if _, ok := linkKinds[in.Kind]; !ok {
+		writeError(w, 400, "validation_error", "관계 유형을 확인해 주세요.")
+		return
+	}
+	if in.PersonID == personID {
+		writeError(w, 400, "validation_error", "같은 사람끼리는 이을 수 없습니다.")
+		return
+	}
+	if in.Strength <= 0 || in.Strength > 1 {
+		in.Strength = .5
+	}
+	a, b := normalizeLink(personID, in.PersonID)
+	var owned int
+	if err := s.store.DB.QueryRow(r.Context(), `SELECT count(*) FROM people WHERE user_id=$1 AND id IN ($2,$3)`, u.ID, a, b).Scan(&owned); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	if owned != 2 {
+		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+		return
+	}
+	linkID := id.New()
+	if err := s.store.DB.QueryRow(r.Context(), `INSERT INTO person_links(id,user_id,person_a,person_b,kind,strength) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (user_id,person_a,person_b) DO UPDATE SET kind=EXCLUDED.kind,strength=EXCLUDED.strength,updated_at=now() RETURNING id`, linkID, u.ID, a, b, in.Kind, in.Strength).Scan(&linkID); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	s.audit(r.Context(), u.ID, "person_link.upsert", "person_link", linkID, r.RemoteAddr, map[string]string{"kind": in.Kind})
+	writeJSON(w, 201, map[string]any{"id": linkID, "kind": in.Kind, "strength": in.Strength})
+}
+
+func (s *Server) deletePersonLink(w http.ResponseWriter, r *http.Request) {
+	u := userFromContext(r.Context())
+	linkID := chi.URLParam(r, "linkID")
+	tag, err := s.store.DB.Exec(r.Context(), `DELETE FROM person_links WHERE user_id=$1 AND id=$2`, u.ID, linkID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, 404, "not_found", "연결을 찾을 수 없습니다.")
+		return
+	}
+	s.audit(r.Context(), u.ID, "person_link.delete", "person_link", linkID, r.RemoteAddr, nil)
+	w.WriteHeader(204)
+}
+
 func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.avatar_url,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,r.anchored,(SELECT count(*) FROM memories m WHERE m.user_id=p.user_id AND m.person_id=p.id AND m.status='approved') FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 1000`, u.ID)
@@ -507,7 +610,31 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		}
 		nodes = append(nodes, map[string]any{"id": personID, "name": name, "avatar_url": avatar, "importance": importance, "closeness": closeness, "momentum": momentum, "x": x, "y": y, "categories": cats, "label": label, "last_interaction_at": last, "anchored": anchored, "memory_count": memories})
 	}
-	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "generated_at": time.Now()})
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	linkRows, err := s.store.DB.Query(r.Context(), `SELECT person_a,person_b,kind,strength FROM person_links WHERE user_id=$1 LIMIT 5000`, u.ID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	defer linkRows.Close()
+	links := make([]map[string]any, 0)
+	for linkRows.Next() {
+		var a, b, kind string
+		var strength float64
+		if err := linkRows.Scan(&a, &b, &kind, &strength); err != nil {
+			internalError(w, r, err)
+			return
+		}
+		links = append(links, map[string]any{"a": a, "b": b, "kind": kind, "strength": strength})
+	}
+	if err := linkRows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "links": links, "generated_at": time.Now()})
 }
 
 func (s *Server) rediscover(w http.ResponseWriter, r *http.Request) {

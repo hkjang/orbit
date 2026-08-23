@@ -24,6 +24,8 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import PushPinRoundedIcon from "@mui/icons-material/PushPinRounded";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
 import { useNavigate, useParams } from "react-router-dom";
+import { GravityAssistCard } from "../components/GravityAssistCard";
+import { PersonLinksCard } from "../components/PersonLinksCard";
 import { StateChip } from "../components/StateChip";
 import { readGrammar } from "../orbitGrammar";
 import { api, formatDate } from "../api";
@@ -337,6 +339,11 @@ export function PersonPage() {
               )}
             </CardContent>
           </Card>
+          <PersonLinksCard
+            personId={person.id}
+            personName={person.display_name}
+          />
+          <GravityAssistCard person={person} />
           <Button
             fullWidth
             variant="contained"

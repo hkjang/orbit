@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Chip, Typography } from "@mui/material";
-import type { OrbitNode } from "../types";
+import type { OrbitLink, OrbitNode } from "../types";
 import {
   constellationEdges,
   nebulaRadius,
@@ -110,6 +110,7 @@ export function OrbitCanvas({
   onSelect,
   constellation,
   rediscover,
+  links,
 }: {
   nodes: OrbitNode[];
   centerName: string;
@@ -118,6 +119,8 @@ export function OrbitCanvas({
   constellation?: string;
   /** 다시 꺼내볼 기억. 그 사람의 행성으로 향하는 혜성으로 나타납니다. */
   rediscover?: { person_id: string; title: string };
+  /** 사람과 사람 사이의 연결. 나를 거치지 않는 궤도 간 인력입니다. */
+  links?: OrbitLink[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -314,6 +317,40 @@ export function OrbitCanvas({
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
         ctx.globalAlpha = 1;
+      }
+      // 사람↔사람 연결: 나를 거치지 않는 인력이라, 중심을 향한 직선과 달리 휘어집니다.
+      if (links?.length) {
+        const byId = new Map(layout.map((node) => [node.id, node]));
+        for (const link of links) {
+          const a = byId.get(link.a),
+            b = byId.get(link.b);
+          if (!a || !b) continue;
+          const pa = toScreen(a.px, a.py),
+            pb = toScreen(b.px, b.py),
+            touched = hovered === a.id || hovered === b.id,
+            shown = lit(a) && lit(b);
+          // 두 행성을 잇는 현의 수직 방향으로 살짝 부풀립니다.
+          const midX = (pa.x + pb.x) / 2,
+            midY = (pa.y + pb.y) / 2,
+            dx = pb.x - pa.x,
+            dy = pb.y - pa.y,
+            span = Math.hypot(dx, dy) || 1;
+          ctx.globalAlpha = shown ? (touched ? 1 : 0.65) : 0.16;
+          ctx.strokeStyle = touched
+            ? "rgba(150,205,255,.85)"
+            : "rgba(120,183,241,.4)";
+          ctx.lineWidth = 0.9 + link.strength * 1.4;
+          ctx.beginPath();
+          ctx.moveTo(pa.x, pa.y);
+          ctx.quadraticCurveTo(
+            midX - (dy / span) * span * 0.12,
+            midY + (dx / span) * span * 0.12,
+            pb.x,
+            pb.y,
+          );
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
       }
       // 별자리: 선택된 그룹의 사람들을 최소 신장 트리로 이어 하나의 형상으로 보여줍니다.
       if (constellation) {
@@ -518,6 +555,7 @@ export function OrbitCanvas({
     centerName,
     constellation,
     rediscover,
+    links,
   ]);
   const stateCounts = useMemo(() => {
     const counts = {} as Record<RelationState, number>;

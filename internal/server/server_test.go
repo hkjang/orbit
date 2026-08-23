@@ -92,3 +92,26 @@ func TestResponsesStreamNormalization(t *testing.T) {
 		t.Fatalf("unexpected normalized stream: %s", recorder.Body.String())
 	}
 }
+
+func TestNormalizeLinkIsOrderIndependent(t *testing.T) {
+	a, b := normalizeLink("f0000000-0000-0000-0000-000000000001", "10000000-0000-0000-0000-000000000002")
+	c, d := normalizeLink("10000000-0000-0000-0000-000000000002", "f0000000-0000-0000-0000-000000000001")
+	if a != c || b != d {
+		t.Fatalf("link normalization must not depend on argument order: got (%s,%s) and (%s,%s)", a, b, c, d)
+	}
+	if a >= b {
+		t.Fatalf("normalized link must satisfy person_a < person_b, got (%s,%s)", a, b)
+	}
+}
+
+func TestLinkKindsCoverStoredValues(t *testing.T) {
+	// person_links의 CHECK 제약과 동일한 집합이어야 저장 실패가 나지 않습니다.
+	for _, kind := range []string{"colleague", "family", "friend", "community", "knows"} {
+		if _, ok := linkKinds[kind]; !ok {
+			t.Fatalf("kind %q is allowed by the schema but has no label", kind)
+		}
+	}
+	if len(linkKinds) != 5 {
+		t.Fatalf("linkKinds has %d entries, schema allows 5", len(linkKinds))
+	}
+}

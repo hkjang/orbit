@@ -80,3 +80,23 @@ export interface Interaction {
   source: string;
   created_at: string;
 }
+
+/** 사람과 사람을 잇는 방향 없는 간선. Orbit 캔버스에 곡선으로 그려집니다. */
+export interface OrbitLink {
+  a: string;
+  b: string;
+  kind: string;
+  strength: number;
+}
+
+/** 인물 상세에서 보는 연결. 상대방 쪽 정보가 펼쳐져 옵니다. */
+export interface PersonLink {
+  id: string;
+  kind: string;
+  kind_label: string;
+  strength: number;
+  person_id: string;
+  person_name: string;
+  company: string;
+  role_title: string;
+}
