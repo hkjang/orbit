@@ -134,6 +134,9 @@ export function OrbitCanvas({
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
   const [hovered, setHovered] = useState<string>();
+  // 키보드로 짚고 있는 행성. 마우스 호버와 별개로 둔다 —
+  // 포인터를 움직이면 호버는 바뀌지만 키보드 위치는 유지되어야 한다.
+  const [keyFocus, setKeyFocus] = useState<number>();
   const dragging = useRef<
     | { x: number; y: number; viewX: number; viewY: number; didMove: boolean }
     | undefined
@@ -483,6 +486,20 @@ export function OrbitCanvas({
           ctx.arc(p.x, p.y, radius + 7, 0, Math.PI * 2);
           ctx.stroke();
         }
+        if (keyFocus !== undefined && layout[keyFocus]?.id === node.id) {
+          // 포커스 표시는 데이터가 아니라 조작을 위한 표식이다. 행성의 상태
+          // 투명도를 물려받으면 다크 오빗 행성에서 거의 보이지 않게 되므로
+          // 여기서만 불투명도를 되돌린다.
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = "rgba(255,255,255,.95)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius + 12, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = alpha;
+        }
         if (node.anchored) {
           // Anchored Star: 궤도에 못 박힌 별. 네 방향 고정 침으로 표시합니다.
           ctx.strokeStyle = "rgba(246,217,129,.8)";
@@ -606,7 +623,28 @@ export function OrbitCanvas({
     links,
     focus,
     ghosts,
+    keyFocus,
   ]);
+  // 확대한 상태에서는 짚은 행성이 화면 밖에 있을 수 있다. 그때만 살짝 밀어
+  // 안으로 들인다. 늘 가운데로 당기면 사용자가 맞춰 둔 시야가 매번 흐트러진다.
+  useEffect(() => {
+    if (keyFocus === undefined) return;
+    const node = layout[keyFocus];
+    if (!node) return;
+    setView((v) => {
+      const margin = 90;
+      const x = size.width / 2 + v.x + node.px * v.zoom;
+      const y = size.height / 2 + v.y + node.py * v.zoom;
+      let nextX = v.x;
+      let nextY = v.y;
+      if (x < margin) nextX += margin - x;
+      else if (x > size.width - margin) nextX -= x - (size.width - margin);
+      if (y < margin) nextY += margin - y;
+      else if (y > size.height - margin) nextY -= y - (size.height - margin);
+      // 바뀌지 않았으면 같은 객체를 돌려줘 불필요한 렌더를 만들지 않는다.
+      return nextX === v.x && nextY === v.y ? v : { ...v, x: nextX, y: nextY };
+    });
+  }, [keyFocus, layout, size]);
   const stateCounts = useMemo(() => {
     const counts = {} as Record<RelationState, number>;
     for (const node of layout)
@@ -636,6 +674,56 @@ export function OrbitCanvas({
         ref={canvasRef}
         aria-label="관계 우주 지도"
         tabIndex={0}
+        role="application"
+        aria-describedby="orbit-canvas-help"
+        onKeyDown={(event) => {
+          if (!layout.length) return;
+          const step = (delta: number) => {
+            event.preventDefault();
+            setKeyFocus((current) => {
+              const next =
+                current === undefined
+                  ? delta > 0
+                    ? 0
+                    : layout.length - 1
+                  : (current + delta + layout.length) % layout.length;
+              return next;
+            });
+          };
+          switch (event.key) {
+            case "ArrowRight":
+            case "ArrowDown":
+              return step(1);
+            case "ArrowLeft":
+            case "ArrowUp":
+              return step(-1);
+            case "Enter":
+            case " ":
+              if (keyFocus !== undefined && layout[keyFocus]) {
+                event.preventDefault();
+                onSelect(layout[keyFocus]);
+              }
+              return;
+            case "Escape":
+              setKeyFocus(undefined);
+              return;
+            case "+":
+            case "=":
+              event.preventDefault();
+              setView((v) => ({ ...v, zoom: Math.min(2.2, v.zoom + 0.2) }));
+              return;
+            case "-":
+              event.preventDefault();
+              setView((v) => ({ ...v, zoom: Math.max(0.55, v.zoom - 0.2) }));
+              return;
+            case "0":
+              event.preventDefault();
+              setView({ x: 0, y: 0, zoom: 1 });
+              return;
+            default:
+              return;
+          }
+        }}
         onWheel={(e) => {
           e.preventDefault();
           setView((v) => ({
@@ -750,8 +838,21 @@ export function OrbitCanvas({
         </button>
       </Box>
       <style>{`.orbit-zoom{width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.13);background:rgba(18,21,40,.9);color:#f4f3fb;font-size:20px;cursor:pointer}.orbit-zoom:hover{background:#292544}.orbit-zoom:focus-visible{outline:2px solid #a99bf8;outline-offset:2px}`}</style>
-      <Typography sx={{ position: "absolute", left: -10000, top: "auto" }}>
-        행성을 선택하면 관계 상세 화면으로 이동합니다.
+      <Typography
+        id="orbit-canvas-help"
+        sx={{ position: "absolute", left: -10000, top: "auto" }}
+      >
+        방향키로 행성 사이를 옮겨 다니고, Enter로 관계 상세 화면을 엽니다.
+        +와 -로 확대·축소하고, 0으로 지도를 처음 위치로 되돌립니다.
+      </Typography>
+      {/* 키보드로 짚은 행성을 스크린 리더에 읽어 준다. 캔버스 그림은 읽히지 않는다. */}
+      <Typography
+        aria-live="polite"
+        sx={{ position: "absolute", left: -10000, top: "auto" }}
+      >
+        {keyFocus !== undefined && layout[keyFocus]
+          ? `${layout[keyFocus].name}, ${layout[keyFocus].grammar.label}. ${layout[keyFocus].grammar.hint}`
+          : ""}
       </Typography>
     </Box>
   );
