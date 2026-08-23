@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Chip, Typography } from "@mui/material";
 import type { OrbitLink, OrbitNode } from "../types";
+import { assignCategoryStyles, styleFor } from "../categoryStyle";
 import { forecastAt, isDegrading } from "../forecast";
 import {
   constellationEdges,
@@ -17,16 +18,10 @@ interface DrawNode extends OrbitNode {
   py: number;
   radius: number;
   color: string;
+  /** 카테고리를 색만이 아니라 테두리 겹수로도 구분한다. */
+  doubleRing: boolean;
   grammar: Grammar;
 }
-const colors = [
-  "#a99bf8",
-  "#7fd4b0",
-  "#78b7f1",
-  "#f0bd69",
-  "#d58fce",
-  "#8fcf72",
-];
 function hash(text: string) {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -114,6 +109,7 @@ export function OrbitCanvas({
   links,
   focus,
   forecastDays,
+  categoryOrder,
 }: {
   nodes: OrbitNode[];
   centerName: string;
@@ -128,6 +124,11 @@ export function OrbitCanvas({
   focus?: string[];
   /** 이 일수 뒤의 예상 궤도를 유령 행성으로 겹쳐 보여줍니다. */
   forecastDays?: number;
+  /**
+   * 소속 색을 배정할 기준 목록. 화면이 일부만 들고 있어도 같은 소속이 같은
+   * 색이 되도록, 서버가 준 사용자의 소속 전체를 넘긴다.
+   */
+  categoryOrder?: string[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -144,8 +145,15 @@ export function OrbitCanvas({
   const scale = Math.min(size.width, size.height) * 0.37;
   const layout = useMemo<DrawNode[]>(() => {
     const now = Date.now();
+    // 소속 모양은 목록 전체를 보고 배정한다. 해시로 고르면 소속이 여덟 개만
+    // 되어도 서로 같은 모양이 나오기 쉽다. 기준 목록이 있으면 그것을 쓴다 —
+    // 화면에 보이는 사람만으로 배정하면 필터에 따라 색이 바뀐다.
+    const styles = assignCategoryStyles(
+      categoryOrder ?? nodes.flatMap((node) => node.categories),
+    );
     const raw = nodes.map((node) => {
       const grammar = readGrammar(node, now);
+      const category = styleFor(styles, node.categories[0]);
       const angle = Math.atan2(node.y, node.x);
       // 오래 교류가 없는 관계는 closeness와 무관하게 Event Horizon 밖에 놓입니다.
       const distance =
@@ -158,7 +166,8 @@ export function OrbitCanvas({
         px: Math.cos(angle) * distance,
         py: Math.sin(angle) * distance,
         radius: 10 + node.importance * 16,
-        color: colors[hash(node.categories[0] ?? node.id) % colors.length],
+        color: category.color,
+        doubleRing: category.double,
       };
     });
     for (let pass = 0; pass < 24; pass++)
@@ -179,7 +188,7 @@ export function OrbitCanvas({
           }
         }
     return raw;
-  }, [nodes, scale]);
+  }, [nodes, scale, categoryOrder]);
   const ghosts = useMemo(() => {
     if (!forecastDays) return [];
     return layout.flatMap((node) => {
@@ -469,7 +478,8 @@ export function OrbitCanvas({
         ctx.beginPath();
         ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
         ctx.fill();
-        // 카테고리(소속)는 테두리 색으로만 남깁니다. 두 축이 서로를 가리지 않습니다.
+        // 카테고리(소속)는 테두리로만 남깁니다. 색이 겹칠 수 있으므로 겹 테두리를
+        // 두 번째 축으로 두어, 색을 구별하기 어려워도 서로 다른 소속임이 보입니다.
         ctx.shadowBlur = 0;
         ctx.strokeStyle = node.color;
         ctx.globalAlpha = alpha * (frozen ? 0.5 : 0.95);
@@ -477,6 +487,12 @@ export function OrbitCanvas({
         ctx.beginPath();
         ctx.arc(p.x, p.y, radius + 2, 0, Math.PI * 2);
         ctx.stroke();
+        if (node.doubleRing) {
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius + 5.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
         ctx.globalAlpha = alpha;
         if (state === "approaching") {
           // 다가오는 관계는 넓어지는 중력장으로 표시합니다.

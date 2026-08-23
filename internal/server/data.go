@@ -65,6 +65,30 @@ func escapeLike(query string) string {
 	return replacer.Replace(query)
 }
 
+// userCategories는 사용자가 쓰고 있는 소속 전체를 돌려준다.
+//
+// 소속 색은 목록 전체를 보고 배정하므로, 화면이 검색이나 필터로 일부만
+// 들고 있어도 같은 소속은 같은 색이어야 한다. 그래서 화면이 가진 자료가
+// 아니라 이 목록을 기준으로 삼는다.
+func (s *Server) userCategories(ctx context.Context, userID string) ([]string, error) {
+	rows, err := s.store.DB.Query(ctx, `SELECT DISTINCT c.value FROM relationships r, jsonb_array_elements_text(r.categories) AS c(value) WHERE r.user_id=$1 AND jsonb_typeof(r.categories)='array' ORDER BY c.value`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		if name != "" {
+			out = append(out, name)
+		}
+	}
+	return out, rows.Err()
+}
+
 func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -104,7 +128,12 @@ func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 		}
 		people = append(people, p)
 	}
-	writeJSON(w, 200, map[string]any{"people": people, "count": len(people)})
+	categories, err := s.userCategories(r.Context(), u.ID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"people": people, "count": len(people), "categories": categories})
 }
 
 func (s *Server) getPerson(w http.ResponseWriter, r *http.Request) {
@@ -642,7 +671,12 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "links": links, "generated_at": time.Now()})
+	categories, err := s.userCategories(r.Context(), u.ID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "links": links, "categories": categories, "generated_at": time.Now()})
 }
 
 func (s *Server) rediscover(w http.ResponseWriter, r *http.Request) {

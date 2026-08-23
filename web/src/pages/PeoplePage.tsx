@@ -22,6 +22,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StateChip } from "../components/StateChip";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
 import { PersonFormDialog } from "../components/PersonFormDialog";
+import { assignCategoryStyles, styleFor } from "../categoryStyle";
 import { STATE_META, STATE_ORDER, type RelationState } from "../orbitGrammar";
 import {
   countByState,
@@ -36,6 +37,7 @@ export function PeoplePage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [people, setPeople] = useState<Person[]>();
+  const [categories, setCategories] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [open, setOpen] = useState(params.get("new") === "1");
@@ -53,10 +55,11 @@ export function PeoplePage() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const data = await api<{ people: Person[] }>(
+      const data = await api<{ people: Person[]; categories: string[] }>(
         `/people/?q=${encodeURIComponent(query)}`,
       );
       setPeople(data.people);
+      setCategories(data.categories ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "관계를 불러오지 못했습니다.");
     }
@@ -66,6 +69,12 @@ export function PeoplePage() {
     return () => clearTimeout(t);
   }, [load]);
   const counts = useMemo(() => countByState(people ?? []), [people]);
+  // 소속 색은 캔버스와 같은 규칙·같은 기준 목록에서 나온다. 검색으로 목록이
+  // 줄어도 색이 바뀌지 않도록 서버가 준 전체 소속을 쓴다.
+  const categoryStyles = useMemo(
+    () => assignCategoryStyles(categories),
+    [categories],
+  );
   const shown = useMemo(
     () => sortPeople(filterByState(people ?? [], state), sort),
     [people, state, sort],
@@ -233,9 +242,24 @@ export function PeoplePage() {
                   <Box
                     sx={{ display: "flex", gap: 0.7, mt: 2, flexWrap: "wrap" }}
                   >
-                    {person.categories.slice(0, 3).map((c) => (
-                      <Chip key={c} size="small" label={c} />
-                    ))}
+                    {person.categories.slice(0, 3).map((c) => {
+                      const style = styleFor(categoryStyles, c);
+                      return (
+                        <Chip
+                          key={c}
+                          size="small"
+                          variant="outlined"
+                          label={c}
+                          sx={{
+                            color: style.color,
+                            borderColor: style.color,
+                            // 캔버스의 겹 테두리에 대응하는 표시.
+                            borderWidth: style.double ? 3 : 1,
+                            borderStyle: style.double ? "double" : "solid",
+                          }}
+                        />
+                      );
+                    })}
                     <StateChip person={person} hideStable />
                     {person.anchored && (
                       <Chip

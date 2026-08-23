@@ -25,6 +25,7 @@ export function OrbitPage() {
   const [nodes, setNodes] = useState<OrbitNode[]>();
   const [contexts, setContexts] = useState<Record<string, number>>({});
   const [links, setLinks] = useState<OrbitLink[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [constellation, setConstellation] = useState("");
   const [eclipseFocus, setEclipseFocus] = useState<string[]>();
   const [forecast, setForecast] = useState(false);
@@ -43,12 +44,14 @@ export function OrbitPage() {
           nodes: OrbitNode[];
           contexts: Record<string, number>;
           links: OrbitLink[];
+          categories: string[];
         }>("/orbit"),
         api<{ item: typeof rediscover }>("/rediscover"),
       ]);
       setNodes(orbit.nodes);
       setContexts(orbit.contexts);
       setLinks(orbit.links ?? []);
+      setCategories(orbit.categories ?? []);
       setRediscover(discovery.item);
     } catch (e) {
       setError(e instanceof Error ? e.message : "우주를 불러오지 못했습니다.");
@@ -205,6 +208,7 @@ export function OrbitPage() {
         links={links}
         focus={eclipseFocus}
         forecastDays={forecast ? 90 : undefined}
+        categoryOrder={categories}
       />
       <Alert
         severity="info"
