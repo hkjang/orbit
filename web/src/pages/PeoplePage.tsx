@@ -68,7 +68,7 @@ export function PeoplePage() {
       />
       <TextField
         fullWidth
-        placeholder="이름, 회사로 찾기"
+        placeholder="이름, 회사, 역할, 관계, 소속으로 찾기"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         slotProps={{ input: {

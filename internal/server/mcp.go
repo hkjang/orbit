@@ -111,7 +111,7 @@ func (s *Server) rpcWrite(w http.ResponseWriter, idValue, result any, rpcErr *rp
 }
 func mcpTools() []map[string]any {
 	return []map[string]any{
-		{"name": "orbit_search_people", "description": "이름 또는 회사로 내 Orbit의 사람을 검색합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"query": map[string]string{"type": "string", "description": "검색어"}}, "required": []string{"query"}}},
+		{"name": "orbit_search_people", "description": "이름, 회사, 역할, 관계, 소속 카테고리로 내 Orbit의 사람을 검색합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"query": map[string]string{"type": "string", "description": "검색어"}}, "required": []string{"query"}}},
 		{"name": "orbit_get_relationship", "description": "특정 사람과의 관계, 궤도 상태, 이어진 사람들, 승인된 기억을 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string", "format": "uuid"}}, "required": []string{"person_id"}}},
 		{"name": "orbit_list_memories", "description": "내 관계 기억을 최신순으로 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}}},
 		{"name": "orbit_create_memory", "description": "새 관계 기억을 기록합니다. 관리자 설정에 따라 팀장 승인 대기가 될 수 있습니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string"}, "title": map[string]string{"type": "string"}, "content": map[string]string{"type": "string"}, "topics": map[string]any{"type": "array", "items": map[string]string{"type": "string"}}}, "required": []string{"title", "content"}}},
@@ -141,7 +141,7 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 			Query string `json:"query"`
 		}
 		_ = json.Unmarshal(call.Arguments, &args)
-		rows, e := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,r.relationship_label,r.last_interaction_at FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND (p.display_name ILIKE '%'||$2||'%' OR p.company ILIKE '%'||$2||'%') ORDER BY r.importance DESC LIMIT 30`, u.ID, strings.TrimSpace(args.Query))
+		rows, e := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,r.relationship_label,r.last_interaction_at FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND (p.display_name ILIKE '%'||$2||'%' ESCAPE '\' OR p.company ILIKE '%'||$2||'%' ESCAPE '\' OR p.role_title ILIKE '%'||$2||'%' ESCAPE '\' OR r.relationship_label ILIKE '%'||$2||'%' ESCAPE '\' OR (jsonb_typeof(r.categories)='array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(r.categories) AS c(value) WHERE c.value ILIKE '%'||$2||'%' ESCAPE '\'))) ORDER BY r.importance DESC LIMIT 30`, u.ID, escapeLike(strings.TrimSpace(args.Query)))
 		if e != nil {
 			err = e
 			break

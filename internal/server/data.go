@@ -57,10 +57,18 @@ func (s *Server) dataKeyVersion(ctx context.Context, userID string, version int)
 	return s.store.Vault.UnwrapKey(wrapped)
 }
 
+// escapeLike는 검색어 안의 ILIKE 와일드카드를 글자 그대로 다루게 한다.
+// 이 처리가 없으면 "100%"를 찾을 때 "100"으로 시작하는 모든 것이 걸리고,
+// "C_O"는 가운데 한 글자가 무엇이든 일치한다.
+func escapeLike(query string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+	return replacer.Replace(query)
+}
+
 func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,p.avatar_url,p.email_cipher,p.phone_cipher,p.note_cipher,p.key_version,p.first_met,p.created_at,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND ($2='' OR p.display_name ILIKE '%'||$2||'%' OR p.company ILIKE '%'||$2||'%') ORDER BY r.importance DESC,p.display_name LIMIT 1000`, u.ID, query)
+	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.company,p.role_title,p.avatar_url,p.email_cipher,p.phone_cipher,p.note_cipher,p.key_version,p.first_met,p.created_at,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND ($2='' OR p.display_name ILIKE '%'||$2||'%' ESCAPE '\' OR p.company ILIKE '%'||$2||'%' ESCAPE '\' OR p.role_title ILIKE '%'||$2||'%' ESCAPE '\' OR r.relationship_label ILIKE '%'||$2||'%' ESCAPE '\' OR (jsonb_typeof(r.categories)='array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(r.categories) AS c(value) WHERE c.value ILIKE '%'||$2||'%' ESCAPE '\'))) ORDER BY r.importance DESC,p.display_name LIMIT 1000`, u.ID, escapeLike(query))
 	if err != nil {
 		internalError(w, r, err)
 		return

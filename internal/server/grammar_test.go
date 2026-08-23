@@ -86,3 +86,21 @@ func TestDescribeLastInteractionSpeaksInHumanTime(t *testing.T) {
 		}
 	}
 }
+
+// 검색어의 와일드카드는 글자 그대로 다뤄야 한다. 이 처리가 없으면 "100%"가
+// "100"으로 시작하는 모든 것을 끌고 오고, 밑줄은 아무 글자나 대신한다.
+func TestEscapeLikeKeepsWildcardsLiteral(t *testing.T) {
+	cases := map[string]string{
+		"김도현":        "김도현",
+		"":           "",
+		"100%":       `100\%`,
+		"C_O":        `C\_O`,
+		`back\slash`: `back\\slash`,
+		"%_%":        `\%\_\%`,
+	}
+	for in, want := range cases {
+		if got := escapeLike(in); got != want {
+			t.Fatalf("escapeLike(%q) = %q, 기대 %q", in, got, want)
+		}
+	}
+}
