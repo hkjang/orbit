@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -15,6 +15,7 @@ import { api, formatDate } from "../api";
 import { useAuth } from "../AuthContext";
 import { OrbitCanvas } from "../components/OrbitCanvas";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
+import { describeEclipse, findEclipses } from "../eclipse";
 import { STATE_META, STATE_ORDER } from "../orbitGrammar";
 import type { OrbitLink, OrbitNode } from "../types";
 
@@ -25,6 +26,8 @@ export function OrbitPage() {
   const [contexts, setContexts] = useState<Record<string, number>>({});
   const [links, setLinks] = useState<OrbitLink[]>([]);
   const [constellation, setConstellation] = useState("");
+  const [eclipseFocus, setEclipseFocus] = useState<string[]>();
+  const [forecast, setForecast] = useState(false);
   const [rediscover, setRediscover] = useState<{
     person_id: string;
     person_name: string;
@@ -54,6 +57,10 @@ export function OrbitPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  const eclipses = useMemo(
+    () => (nodes ? findEclipses(nodes, links) : []),
+    [nodes, links],
+  );
   if (error) return <ErrorView message={error} retry={load} />;
   if (!nodes) return <LoadingView />;
   if (nodes.length === 0)
@@ -101,6 +108,15 @@ export function OrbitPage() {
           </Typography>
         </Box>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          <Chip
+            label="90일 후 미리보기"
+            variant={forecast ? "filled" : "outlined"}
+            color={forecast ? "secondary" : "default"}
+            clickable
+            aria-pressed={forecast}
+            title="이대로 두면 어디로 밀려나는지 유령 궤도로 겹쳐 봅니다."
+            onClick={() => setForecast((on) => !on)}
+          />
           {Object.entries(contexts)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 4)
@@ -120,6 +136,19 @@ export function OrbitPage() {
             ))}
         </Box>
       </Box>
+      {eclipses.length > 0 && nodes && (
+        <EclipseCard
+          group={eclipses[0]}
+          nodes={nodes}
+          focused={Boolean(eclipseFocus)}
+          onToggle={() =>
+            setEclipseFocus((current) =>
+              current ? undefined : eclipses[0].members.map((m) => m.id),
+            )
+          }
+          onOpen={(personId) => navigate(`/people/${personId}`)}
+        />
+      )}
       {rediscover && (
         <Card
           sx={{
@@ -174,6 +203,8 @@ export function OrbitPage() {
             : undefined
         }
         links={links}
+        focus={eclipseFocus}
+        forecastDays={forecast ? 90 : undefined}
       />
       <Alert
         severity="info"
@@ -207,5 +238,69 @@ export function OrbitPage() {
         </Box>
       </Alert>
     </Box>
+  );
+}
+
+/**
+ * 함께 조용해진 그룹을 한 장의 사건으로 보여줍니다.
+ * 사람마다 빨간 배지를 다는 대신, 무슨 일이 있었는지 묻게 만드는 쪽을 택했습니다.
+ */
+function EclipseCard({
+  group,
+  nodes,
+  focused,
+  onToggle,
+  onOpen,
+}: {
+  group: ReturnType<typeof findEclipses>[number];
+  nodes: OrbitNode[];
+  focused: boolean;
+  onToggle: () => void;
+  onOpen: (personId: string) => void;
+}) {
+  const copy = describeEclipse(group, nodes);
+  return (
+    <Card
+      sx={{
+        mb: 2.5,
+        background:
+          "linear-gradient(110deg,rgba(120,183,241,.10),rgba(169,155,248,.10))",
+      }}
+    >
+      <CardContent sx={{ py: "18px!important" }}>
+        <Typography
+          variant="overline"
+          color="primary.light"
+          sx={{ letterSpacing: ".13em" }}
+        >
+          ECLIPSE
+        </Typography>
+        <Typography sx={{ fontWeight: 720 }}>{copy.headline}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3 }}>
+          {copy.hint}
+        </Typography>
+        <Box
+          sx={{ display: "flex", gap: 0.8, flexWrap: "wrap", mt: 1.5 }}
+        >
+          {group.members.map((member) => (
+            <Chip
+              key={member.id}
+              size="small"
+              clickable
+              variant={
+                group.faded.some((f) => f.id === member.id)
+                  ? "outlined"
+                  : "filled"
+              }
+              label={member.name}
+              onClick={() => onOpen(member.id)}
+            />
+          ))}
+          <Button size="small" onClick={onToggle}>
+            {focused ? "전체 우주 보기" : "지도에서 보기"}
+          </Button>
+        </Box>
+      </CardContent>
+    </Card>
   );
 }

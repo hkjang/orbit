@@ -27,6 +27,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { GravityAssistCard } from "../components/GravityAssistCard";
 import { PersonLinksCard } from "../components/PersonLinksCard";
 import { StateChip } from "../components/StateChip";
+import { daysUntilDarkOrbit, forecastAt } from "../forecast";
 import { readGrammar } from "../orbitGrammar";
 import { api, formatDate } from "../api";
 import { ErrorView, LoadingView, EmptyView } from "../components/StateViews";
@@ -204,6 +205,30 @@ export function PersonPage() {
                 {grammar.anchored &&
                   " 고정된 관계라 교류가 뜸해져도 곁에 남습니다."}
               </Typography>
+              {(() => {
+                const crossing = daysUntilDarkOrbit(person);
+                const later = forecastAt(person, 90);
+                if (crossing !== null)
+                  return (
+                    <Typography
+                      variant="body2"
+                      sx={{ mt: 1, color: "warning.light" }}
+                    >
+                      이대로면 약 {crossing}일 뒤 Event Horizon을 넘습니다.
+                    </Typography>
+                  );
+                if (later && later.grammar.state !== grammar.state)
+                  return (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mt: 1 }}
+                    >
+                      90일 뒤 예상 · {later.grammar.label}
+                    </Typography>
+                  );
+                return null;
+              })()}
               <Typography color="text.secondary" sx={{ mt: 1 }}>
                 마지막 교류는 {formatDate(person.last_interaction_at)}이에요.
                 거리와 중요도는 서로 다르게 움직입니다.

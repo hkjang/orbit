@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Chip, Typography } from "@mui/material";
 import type { OrbitLink, OrbitNode } from "../types";
+import { forecastAt, isDegrading } from "../forecast";
 import {
   constellationEdges,
   nebulaRadius,
@@ -111,6 +112,8 @@ export function OrbitCanvas({
   constellation,
   rediscover,
   links,
+  focus,
+  forecastDays,
 }: {
   nodes: OrbitNode[];
   centerName: string;
@@ -121,6 +124,10 @@ export function OrbitCanvas({
   rediscover?: { person_id: string; title: string };
   /** 사람과 사람 사이의 연결. 나를 거치지 않는 궤도 간 인력입니다. */
   links?: OrbitLink[];
+  /** 특정 인물들만 밝히기. Eclipse처럼 카테고리로 묶이지 않는 그룹에 씁니다. */
+  focus?: string[];
+  /** 이 일수 뒤의 예상 궤도를 유령 행성으로 겹쳐 보여줍니다. */
+  forecastDays?: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -170,6 +177,25 @@ export function OrbitCanvas({
         }
     return raw;
   }, [nodes, scale]);
+  const ghosts = useMemo(() => {
+    if (!forecastDays) return [];
+    return layout.flatMap((node) => {
+      if (!isDegrading(node, forecastDays)) return [];
+      const later = forecastAt(node, forecastDays);
+      if (!later) return [];
+      const distance = Math.hypot(node.px, node.py) || 1,
+        band = later.grammar.state === "dormant" ? 1.06 : 0.9,
+        projected = Math.max(distance, scale * band);
+      return [
+        {
+          node,
+          gx: (node.px / distance) * projected,
+          gy: (node.py / distance) * projected,
+          tone: later.grammar.tone,
+        },
+      ];
+    });
+  }, [layout, forecastDays, scale]);
   const toScreen = useCallback(
     (x: number, y: number) => ({
       x: size.width / 2 + view.x + x * view.zoom,
@@ -279,8 +305,11 @@ export function OrbitCanvas({
         bandLabel("EVENT HORIZON", center.y - horizon - 7, "rgba(150,160,196,.62)");
         bandLabel("DARK ORBIT", center.y + horizon + 17, "rgba(124,134,168,.5)");
       }
+      const focused = focus?.length ? new Set(focus) : undefined;
       const lit = (node: DrawNode) =>
-        !constellation || node.categories.includes(constellation);
+        focused
+          ? focused.has(node.id)
+          : !constellation || node.categories.includes(constellation);
       // Memory Nebula: 기억이 쌓인 사람 주변에 성운이 형성됩니다.
       for (const node of layout) {
         const p = toScreen(node.px, node.py),
@@ -316,6 +345,25 @@ export function OrbitCanvas({
         ctx.moveTo(center.x, center.y);
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      // Ghost Orbit: 이대로 두면 어디로 밀려나는지, 지금 자리 옆에 흐릿하게 겹칩니다.
+      for (const ghost of ghosts) {
+        const g = toScreen(ghost.gx, ghost.gy),
+          here = toScreen(ghost.node.px, ghost.node.py),
+          radius = Math.max(7, ghost.node.radius * view.zoom);
+        ctx.globalAlpha = lit(ghost.node) ? 0.55 : 0.16;
+        ctx.strokeStyle = ghost.tone;
+        ctx.setLineDash([3, 5]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(here.x, here.y);
+        ctx.lineTo(g.x, g.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
         ctx.globalAlpha = 1;
       }
       // 사람↔사람 연결: 나를 거치지 않는 인력이라, 중심을 향한 직선과 달리 휘어집니다.
@@ -556,6 +604,8 @@ export function OrbitCanvas({
     constellation,
     rediscover,
     links,
+    focus,
+    ghosts,
   ]);
   const stateCounts = useMemo(() => {
     const counts = {} as Record<RelationState, number>;
