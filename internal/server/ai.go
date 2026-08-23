@@ -79,13 +79,28 @@ func (s *Server) relationshipContext(ctx context.Context, userID, personID strin
 	b.WriteString("Orbit 관계 기록 (이 기록에 없는 사실은 모른다고 답하세요):\n")
 	if personID != "" {
 		var name, label string
-		var importance, closeness, momentum float64
+		var momentum float64
 		var last *time.Time
-		err := s.store.DB.QueryRow(ctx, `SELECT p.display_name,r.relationship_label,r.importance,r.closeness,r.momentum,r.last_interaction_at FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.id=$1 AND p.user_id=$2`, personID, userID).Scan(&name, &label, &importance, &closeness, &momentum, &last)
+		var anchored bool
+		err := s.store.DB.QueryRow(ctx, `SELECT p.display_name,r.relationship_label,r.momentum,r.last_interaction_at,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.id=$1 AND p.user_id=$2`, personID, userID).Scan(&name, &label, &momentum, &last, &anchored)
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(&b, "인물: %s, 관계: %s, 중요도(내부값): %.2f, 현재 활성도(내부값): %.2f, 변화(내부값): %.2f, 마지막 교류: %v\n", name, label, importance, closeness, momentum, last)
+		// 내부 수치는 넘기지 않는다. 넘기면 AI가 그대로 되읊어 "활성도 0.31" 같은
+		// 점수가 사용자에게 노출되고, 관계를 점수로 평가하지 않는다는 전제가 깨진다.
+		state := ReadGrammar(momentum, last, anchored, time.Now())
+		fmt.Fprintf(&b, "인물: %s, 관계: %s, 궤도 상태: %s(%s), 마지막 교류: %s\n",
+			name, label, StateLabel[state], StateHint[state], describeLastInteraction(last, time.Now()))
+		if anchored {
+			b.WriteString("이 관계는 고정되어 있습니다. 교류가 뜸해져도 곁에 두기로 한 사이입니다.\n")
+		}
+		connections, err := s.personConnections(ctx, userID, personID)
+		if err != nil {
+			return "", err
+		}
+		if len(connections) > 0 {
+			fmt.Fprintf(&b, "이 사람과 이어진 사람들: %s\n", strings.Join(connections, ", "))
+		}
 		memories, err := s.queryMemories(ctx, userID, personID, "approved")
 		if err != nil {
 			return "", err
@@ -97,22 +112,69 @@ func (s *Server) relationshipContext(ctx context.Context, userID, personID strin
 			fmt.Fprintf(&b, "- 기억 %s (%v): %s\n", m.Title, m.OccurredAt, m.Content)
 		}
 	} else {
-		rows, err := s.store.DB.Query(ctx, `SELECT p.display_name,r.relationship_label,r.last_interaction_at,r.momentum FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 80`, userID)
+		rows, err := s.store.DB.Query(ctx, `SELECT p.display_name,r.relationship_label,r.last_interaction_at,r.momentum,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 80`, userID)
 		if err != nil {
 			return "", err
 		}
 		defer rows.Close()
+		now := time.Now()
 		for rows.Next() {
 			var name, label string
 			var last *time.Time
 			var momentum float64
-			if err := rows.Scan(&name, &label, &last, &momentum); err != nil {
+			var anchored bool
+			if err := rows.Scan(&name, &label, &last, &momentum, &anchored); err != nil {
 				return "", err
 			}
-			fmt.Fprintf(&b, "- %s / %s / 마지막 교류 %v / 변화 %.2f\n", name, label, last, momentum)
+			state := ReadGrammar(momentum, last, anchored, now)
+			fmt.Fprintf(&b, "- %s / %s / %s / 마지막 교류 %s\n",
+				name, label, StateLabel[state], describeLastInteraction(last, now))
+		}
+		if err := rows.Err(); err != nil {
+			return "", err
 		}
 	}
 	return b.String(), nil
+}
+
+// describeLastInteraction은 시각을 사람의 말로 바꾼다.
+// 타임스탬프를 그대로 넘기면 AI가 날짜 계산을 틀리기 쉽다.
+func describeLastInteraction(at *time.Time, now time.Time) string {
+	days := DaysSince(at, now)
+	switch {
+	case days < 0:
+		return "아직 기록 없음"
+	case days == 0:
+		return "오늘"
+	case days < 30:
+		return fmt.Sprintf("%d일 전", days)
+	case days < 365:
+		return fmt.Sprintf("약 %d개월 전", days/30)
+	default:
+		return fmt.Sprintf("약 %d년 전", days/365)
+	}
+}
+
+// personConnections는 그 사람과 이어진 다른 사람들을 사람의 말로 돌려준다.
+func (s *Server) personConnections(ctx context.Context, userID, personID string) ([]string, error) {
+	rows, err := s.store.DB.Query(ctx, `SELECT p.display_name,l.kind FROM person_links l JOIN people p ON p.id = CASE WHEN l.person_a=$2 THEN l.person_b ELSE l.person_a END WHERE l.user_id=$1 AND $2 IN (l.person_a,l.person_b) ORDER BY l.strength DESC LIMIT 20`, userID, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var name, kind string
+		if err := rows.Scan(&name, &kind); err != nil {
+			return nil, err
+		}
+		if label := linkKinds[kind]; label != "" {
+			out = append(out, fmt.Sprintf("%s(%s)", name, label))
+		} else {
+			out = append(out, name)
+		}
+	}
+	return out, rows.Err()
 }
 
 func (s *Server) proxyAIStream(ctx context.Context, w io.Writer, flusher http.Flusher, settings AISettings, prompt, relationshipContext string, maxTokens int) error {

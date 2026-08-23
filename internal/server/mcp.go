@@ -112,7 +112,7 @@ func (s *Server) rpcWrite(w http.ResponseWriter, idValue, result any, rpcErr *rp
 func mcpTools() []map[string]any {
 	return []map[string]any{
 		{"name": "orbit_search_people", "description": "이름 또는 회사로 내 Orbit의 사람을 검색합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"query": map[string]string{"type": "string", "description": "검색어"}}, "required": []string{"query"}}},
-		{"name": "orbit_get_relationship", "description": "특정 사람과의 관계, 최근 교류, 승인된 기억을 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string", "format": "uuid"}}, "required": []string{"person_id"}}},
+		{"name": "orbit_get_relationship", "description": "특정 사람과의 관계, 궤도 상태, 이어진 사람들, 승인된 기억을 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string", "format": "uuid"}}, "required": []string{"person_id"}}},
 		{"name": "orbit_list_memories", "description": "내 관계 기억을 최신순으로 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}}},
 		{"name": "orbit_create_memory", "description": "새 관계 기억을 기록합니다. 관리자 설정에 따라 팀장 승인 대기가 될 수 있습니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string"}, "title": map[string]string{"type": "string"}, "content": map[string]string{"type": "string"}, "topics": map[string]any{"type": "array", "items": map[string]string{"type": "string"}}}, "required": []string{"title", "content"}}},
 	}
@@ -166,7 +166,8 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 		var name, label string
 		var importance, closeness, momentum float64
 		var last *time.Time
-		e := s.store.DB.QueryRow(r.Context(), `SELECT p.display_name,r.relationship_label,r.importance,r.closeness,r.momentum,r.last_interaction_at FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND p.id=$2`, u.ID, args.PersonID).Scan(&name, &label, &importance, &closeness, &momentum, &last)
+		var anchored bool
+		e := s.store.DB.QueryRow(r.Context(), `SELECT p.display_name,r.relationship_label,r.importance,r.closeness,r.momentum,r.last_interaction_at,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 AND p.id=$2`, u.ID, args.PersonID).Scan(&name, &label, &importance, &closeness, &momentum, &last, &anchored)
 		if e != nil {
 			err = e
 			break
@@ -179,7 +180,16 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 		if len(memories) > 30 {
 			memories = memories[:30]
 		}
-		result = map[string]any{"person_id": args.PersonID, "name": name, "relationship": label, "importance": importance, "closeness": closeness, "momentum": momentum, "last_interaction_at": last, "memories": memories}
+		connections, e := s.personConnections(r.Context(), u.ID, args.PersonID)
+		if e != nil {
+			err = e
+			break
+		}
+		// 원시 수치는 그대로 둔다. MCP는 기계가 읽는 표면이라 모델 값이 쓸모 있다.
+		// 다만 사람에게 그대로 옮겨도 되는 말(state_label)을 함께 실어, 외부
+		// 에이전트가 점수를 되읊는 대신 상태로 말할 수 있게 한다.
+		state := ReadGrammar(momentum, last, anchored, time.Now())
+		result = map[string]any{"person_id": args.PersonID, "name": name, "relationship": label, "importance": importance, "closeness": closeness, "momentum": momentum, "last_interaction_at": last, "state": string(state), "state_label": StateLabel[state], "state_hint": StateHint[state], "anchored": anchored, "connections": connections, "memories": memories}
 	case "orbit_list_memories":
 		var args struct {
 			PersonID string `json:"person_id"`
