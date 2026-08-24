@@ -1,6 +1,13 @@
 services:
   orbit:
-    image: orbit:v0.1.0
+    # 기본값은 릴리즈 이미지 이름이지만, 저장소에서 바로 올릴 때를 위해 build도
+    # 함께 둔다. 예전에는 이미지 태그가 고정돼 있어 릴리즈가 올라가도 compose는
+    # 옛 이미지를 가리켰고, 그 이미지가 로컬에 없으면 아예 뜨지 않았다.
+    image: ${ORBIT_IMAGE:-orbit:local}
+    build:
+      context: .
+      args:
+        VERSION: ${ORBIT_VERSION:-local}
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -17,6 +24,15 @@ services:
       - /tmp:size=16m,mode=1777
     security_opt:
       - no-new-privileges:true
+    # 실행 이미지가 distroless라 셸도 curl도 없다. 바이너리가 스스로 /readyz를
+    # 물어 DB까지 닿는지 확인한다. 프로세스만 살아 있고 DB가 끊긴 상태를
+    # "정상"으로 보고하지 않기 위한 것이다.
+    healthcheck:
+      test: ["CMD", "/orbit", "-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
