@@ -450,36 +450,60 @@ func (s *Server) createInteraction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]string{"id": interactionID})
 }
 
+// interactionPoint는 지표 계산에 필요한 교류 한 건이다.
+type interactionPoint struct {
+	At     time.Time
+	Weight float64
+}
+
+// relationshipMetrics는 최근 교류에서 친밀도와 흐름을 뽑는다.
+//
+// 오래된 교류일수록 가치가 지수적으로 줄고, 최근 45일과 그 이전 45일의
+// 무게를 견주어 관계가 다가오는지 멀어지는지를 낸다.
+func relationshipMetrics(points []interactionPoint, now time.Time) (score, closeness, momentum float64) {
+	var recent, previous float64
+	for _, p := range points {
+		days := now.Sub(p.At).Hours() / 24
+		score += p.Weight * math.Exp(-.018*math.Max(0, days))
+		if days <= 45 {
+			recent += p.Weight
+		} else if days <= 90 {
+			previous += p.Weight
+		}
+	}
+	closeness = 1 - math.Exp(-score/12)
+	momentum = (recent - previous) / math.Max(1, recent+previous)
+	return score, closeness, momentum
+}
+
 func (s *Server) recalculateRelationship(ctx context.Context, userID, personID string) error {
 	rows, err := s.store.DB.Query(ctx, `SELECT occurred_at,weight FROM interactions WHERE user_id=$1 AND person_id=$2 AND occurred_at>now()-interval '365 days'`, userID, personID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	now := time.Now()
-	var score, recent, previous float64
-	var last *time.Time
+	points := []interactionPoint{}
 	for rows.Next() {
-		var at time.Time
-		var weight float64
-		if err := rows.Scan(&at, &weight); err != nil {
+		var p interactionPoint
+		if err := rows.Scan(&p.At, &p.Weight); err != nil {
 			return err
 		}
-		days := now.Sub(at).Hours() / 24
-		value := weight * math.Exp(-.018*math.Max(0, days))
-		score += value
-		if days <= 45 {
-			recent += weight
-		} else if days <= 90 {
-			previous += weight
-		}
-		if last == nil || at.After(*last) {
-			copy := at
-			last = &copy
-		}
+		points = append(points, p)
 	}
-	closeness := 1 - math.Exp(-score/12)
-	momentum := (recent - previous) / math.Max(1, recent+previous)
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	score, closeness, momentum := relationshipMetrics(points, time.Now())
+
+	// 마지막 교류 시각은 창을 두지 않고 전체에서 찾는다. 점수는 1년치만 보는
+	// 것이 맞지만, 같은 창으로 마지막 시각까지 구하면 1년보다 오래된 교류만
+	// 있는 사람의 시각이 비어 버린다. 그러면 궤도 문법이 그 사람을 "교류 기록
+	// 없음"으로 읽어, 가장 오래 끊긴 관계를 안정 궤도로 표시하게 된다.
+	var last *time.Time
+	if err := s.store.DB.QueryRow(ctx, `SELECT max(occurred_at) FROM interactions WHERE user_id=$1 AND person_id=$2`, userID, personID).Scan(&last); err != nil {
+		return err
+	}
+
 	_, err = s.store.DB.Exec(ctx, `UPDATE relationships SET closeness=$3,momentum=$4,interaction_score=$5,last_interaction_at=$6,updated_at=now() WHERE user_id=$1 AND person_id=$2`, userID, personID, closeness, momentum, score, last)
 	return err
 }

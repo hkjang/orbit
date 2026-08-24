@@ -178,3 +178,66 @@ func TestPersonInputCountsCategoriesAfterTidying(t *testing.T) {
 		t.Fatalf("소속이 %v", in.Categories)
 	}
 }
+
+func TestRelationshipMetricsReadRecentContact(t *testing.T) {
+	now := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+	ago := func(days int) time.Time { return now.AddDate(0, 0, -days) }
+
+	t.Run("교류가 없으면 모두 0", func(t *testing.T) {
+		score, closeness, momentum := relationshipMetrics(nil, now)
+		if score != 0 || closeness != 0 || momentum != 0 {
+			t.Fatalf("0을 기대했으나 %v %v %v", score, closeness, momentum)
+		}
+	})
+
+	t.Run("최근 교류가 옛 교류보다 친밀도를 크게 올린다", func(t *testing.T) {
+		_, recentCloseness, _ := relationshipMetrics(
+			[]interactionPoint{{ago(3), 1}}, now)
+		_, oldCloseness, _ := relationshipMetrics(
+			[]interactionPoint{{ago(300), 1}}, now)
+		if recentCloseness <= oldCloseness {
+			t.Fatalf("최근이 더 커야 한다: %v vs %v", recentCloseness, oldCloseness)
+		}
+	})
+
+	t.Run("교류가 늘면 momentum이 양수", func(t *testing.T) {
+		_, _, momentum := relationshipMetrics([]interactionPoint{
+			{ago(5), 1}, {ago(20), 1}, {ago(80), 1},
+		}, now)
+		if momentum <= 0 {
+			t.Fatalf("양수를 기대했으나 %v", momentum)
+		}
+	})
+
+	t.Run("교류가 줄면 momentum이 음수", func(t *testing.T) {
+		_, _, momentum := relationshipMetrics([]interactionPoint{
+			{ago(60), 1}, {ago(70), 1}, {ago(85), 1},
+		}, now)
+		if momentum >= 0 {
+			t.Fatalf("음수를 기대했으나 %v", momentum)
+		}
+	})
+
+	// 스키마가 0~1만 받는다. 교류가 아주 많으면 1로 포화되는데, 그것이
+	// "더 가까울 수 없다"는 뜻이므로 정상이다. 넘지만 않으면 된다.
+	t.Run("친밀도는 0과 1 사이를 벗어나지 않는다", func(t *testing.T) {
+		many := make([]interactionPoint, 500)
+		for i := range many {
+			many[i] = interactionPoint{ago(1), 10}
+		}
+		_, closeness, _ := relationshipMetrics(many, now)
+		if closeness < 0 || closeness > 1 {
+			t.Fatalf("0~1 범위를 벗어났다: %v", closeness)
+		}
+	})
+
+	// 사용자가 앞날 일정을 미리 적어 둘 수 있다. 경과 일수가 음수가 되어도
+	// 지수가 폭주하지 않도록 0으로 눌러 둔다.
+	t.Run("미래 시각도 폭주하지 않는다", func(t *testing.T) {
+		_, closeness, _ := relationshipMetrics(
+			[]interactionPoint{{now.AddDate(0, 0, 30), 1}}, now)
+		if closeness < 0 || closeness > 1 {
+			t.Fatalf("0~1 범위를 벗어났다: %v", closeness)
+		}
+	})
+}
