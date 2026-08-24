@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Box, CircularProgress } from "@mui/material";
 import { useAuth } from "./AuthContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Layout } from "./Layout";
 
 const LoginPage = lazy(() =>
@@ -64,32 +65,39 @@ function HomeRedirect() {
 
 export default function App() {
   const { user } = useAuth();
+  const location = useLocation();
   return (
-    <Suspense
-      fallback={
-        <Box sx={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
-          <CircularProgress />
-        </Box>
-      }
-    >
-      <Routes>
-        <Route
-          path="/login"
-          element={user ? <Navigate to="/" replace /> : <LoginPage />}
-        />
-        <Route element={<Protected />}>
-          <Route path="/" element={<HomeRedirect />} />
-          <Route path="/orbit" element={<OrbitPage />} />
-          <Route path="/people" element={<PeoplePage />} />
-          <Route path="/people/:personId" element={<PersonPage />} />
-          <Route path="/memories" element={<MemoriesPage />} />
-          <Route path="/ai" element={<AIPage />} />
-          <Route path="/approvals" element={<ApprovalsPage />} />
-          <Route path="/personal" element={<PersonalPage />} />
-          <Route path="/admin/*" element={<AdminPage />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Suspense>
+    // 경계는 경로마다 새로 세운다. 한 번 무너진 채로 남으면 다른 화면으로
+    // 옮겨가도 계속 오류만 보인다.
+    <ErrorBoundary key={location.pathname}>
+      <Suspense
+        fallback={
+          <Box
+            sx={{ minHeight: "100vh", display: "grid", placeItems: "center" }}
+          >
+            <CircularProgress />
+          </Box>
+        }
+      >
+        <Routes>
+          <Route
+            path="/login"
+            element={user ? <Navigate to="/" replace /> : <LoginPage />}
+          />
+          <Route element={<Protected />}>
+            <Route path="/" element={<HomeRedirect />} />
+            <Route path="/orbit" element={<OrbitPage />} />
+            <Route path="/people" element={<PeoplePage />} />
+            <Route path="/people/:personId" element={<PersonPage />} />
+            <Route path="/memories" element={<MemoriesPage />} />
+            <Route path="/ai" element={<AIPage />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
+            <Route path="/personal" element={<PersonalPage />} />
+            <Route path="/admin/*" element={<AdminPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
