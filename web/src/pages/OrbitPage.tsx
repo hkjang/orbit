@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
   Chip,
+  Slider,
   Typography,
 } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
@@ -29,6 +30,9 @@ export function OrbitPage() {
   const [constellation, setConstellation] = useState("");
   const [eclipseFocus, setEclipseFocus] = useState<string[]>();
   const [forecast, setForecast] = useState(false);
+  // 시간 여행. 비어 있으면 현재를 뜻한다.
+  const [travelTo, setTravelTo] = useState<string>();
+  const [earliest, setEarliest] = useState<string>();
   const [rediscover, setRediscover] = useState<{
     person_id: string;
     person_name: string;
@@ -45,18 +49,21 @@ export function OrbitPage() {
           contexts: Record<string, number>;
           links: OrbitLink[];
           categories: string[];
-        }>("/orbit"),
+          earliest_at?: string;
+        }>(travelTo ? `/orbit?at=${encodeURIComponent(travelTo)}` : "/orbit"),
         api<{ item: typeof rediscover }>("/rediscover"),
       ]);
       setNodes(orbit.nodes);
       setContexts(orbit.contexts);
       setLinks(orbit.links ?? []);
       setCategories(orbit.categories ?? []);
+      // 구간의 시작점은 현재 화면을 부를 때만 온다. 과거로 간 뒤에도 유지한다.
+      if (orbit.earliest_at) setEarliest(orbit.earliest_at);
       setRediscover(discovery.item);
     } catch (e) {
       setError(e instanceof Error ? e.message : "우주를 불러오지 못했습니다.");
     }
-  }, []);
+  }, [travelTo]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -111,15 +118,17 @@ export function OrbitPage() {
           </Typography>
         </Box>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          <Chip
-            label="90일 후 미리보기"
-            variant={forecast ? "filled" : "outlined"}
-            color={forecast ? "secondary" : "default"}
-            clickable
-            aria-pressed={forecast}
-            title="이대로 두면 어디로 밀려나는지 유령 궤도로 겹쳐 봅니다."
-            onClick={() => setForecast((on) => !on)}
-          />
+          {!travelTo && (
+            <Chip
+              label="90일 후 미리보기"
+              variant={forecast ? "filled" : "outlined"}
+              color={forecast ? "secondary" : "default"}
+              clickable
+              aria-pressed={forecast}
+              title="이대로 두면 어디로 밀려나는지 유령 궤도로 겹쳐 봅니다."
+              onClick={() => setForecast((on) => !on)}
+            />
+          )}
           {Object.entries(contexts)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 4)
@@ -139,6 +148,13 @@ export function OrbitPage() {
             ))}
         </Box>
       </Box>
+      {earliest && (
+        <TimeTravel
+          earliest={earliest}
+          value={travelTo}
+          onChange={setTravelTo}
+        />
+      )}
       {eclipses.length > 0 && nodes && (
         <EclipseCard
           group={eclipses[0]}
@@ -207,7 +223,8 @@ export function OrbitPage() {
         }
         links={links}
         focus={eclipseFocus}
-        forecastDays={forecast ? 90 : undefined}
+        forecastDays={forecast && !travelTo ? 90 : undefined}
+        asOf={travelTo ? Date.parse(travelTo) : undefined}
         categoryOrder={categories}
       />
       <Alert
@@ -216,8 +233,8 @@ export function OrbitPage() {
         sx={{ mt: 2, bgcolor: "rgba(120,183,241,.07)" }}
       >
         <Typography variant="body2" sx={{ mb: 1 }}>
-          크기는 중요도, 거리는 친밀도, 화살표는 관계가 지금 움직이는 방향입니다.
-          숫자로 관계를 평가하지 않습니다.
+          크기는 중요도, 거리는 친밀도, 화살표는 관계가 지금 움직이는
+          방향입니다. 숫자로 관계를 평가하지 않습니다.
         </Typography>
         <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
           {STATE_ORDER.map((state) => (
@@ -283,9 +300,7 @@ function EclipseCard({
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3 }}>
           {copy.hint}
         </Typography>
-        <Box
-          sx={{ display: "flex", gap: 0.8, flexWrap: "wrap", mt: 1.5 }}
-        >
+        <Box sx={{ display: "flex", gap: 0.8, flexWrap: "wrap", mt: 1.5 }}>
           {group.members.map((member) => (
             <Chip
               key={member.id}
@@ -304,6 +319,85 @@ function EclipseCard({
             {focused ? "전체 우주 보기" : "지도에서 보기"}
           </Button>
         </Box>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * 과거의 우주로 옮겨 가는 슬라이더.
+ *
+ * 되살아나는 것은 교류가 만든 거리와 흐름이다. 중요도·소속·고정 여부는
+ * 사용자가 직접 정하는 값이라 변경 이력이 없어 오늘의 값을 쓴다. 그 사실을
+ * 화면에서도 숨기지 않는다.
+ */
+function TimeTravel({
+  earliest,
+  value,
+  onChange,
+}: {
+  earliest: string;
+  value?: string;
+  onChange: (value?: string) => void;
+}) {
+  const start = new Date(earliest).getTime();
+  const end = Date.now();
+  const current = value ? new Date(value).getTime() : end;
+  const days = Math.max(1, Math.round((end - start) / 86_400_000));
+  const dayOf = (time: number) => Math.round((time - start) / 86_400_000);
+  return (
+    <Card sx={{ mb: 2.5 }}>
+      <CardContent sx={{ py: "16px!important" }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
+          }}
+        >
+          <Box sx={{ minWidth: 160 }}>
+            <Typography
+              variant="overline"
+              color="primary.light"
+              sx={{ letterSpacing: ".13em" }}
+            >
+              TIME TRAVEL
+            </Typography>
+            <Typography sx={{ fontWeight: 720 }}>
+              {value ? formatDate(value) : "지금의 우주"}
+            </Typography>
+          </Box>
+          <Slider
+            value={dayOf(current)}
+            min={0}
+            max={days}
+            step={1}
+            aria-label="돌아볼 시점"
+            valueLabelDisplay="auto"
+            valueLabelFormat={(day) =>
+              formatDate(new Date(start + day * 86_400_000).toISOString())
+            }
+            onChange={(_, day) => {
+              const at = new Date(start + (day as number) * 86_400_000);
+              onChange(
+                dayOf(at.getTime()) >= days ? undefined : at.toISOString(),
+              );
+            }}
+            sx={{ flex: "1 1 240px", mx: 1 }}
+          />
+          {value && (
+            <Button size="small" onClick={() => onChange(undefined)}>
+              현재로
+            </Button>
+          )}
+        </Box>
+        {value && (
+          <Typography variant="caption" color="text.secondary">
+            그날의 거리와 흐름을 교류 기록에서 다시 계산했습니다.
+            중요도·소속·고정은 변경 이력이 없어 오늘의 값을 씁니다.
+          </Typography>
+        )}
       </CardContent>
     </Card>
   );

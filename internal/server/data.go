@@ -666,8 +666,37 @@ func (s *Server) deletePersonLink(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
+// orbitLinks는 사람 사이 연결을 읽는다. 현재 화면과 과거 화면이 함께 쓴다.
+func (s *Server) orbitLinks(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := s.store.DB.Query(ctx, `SELECT person_a,person_b,kind,strength FROM person_links WHERE user_id=$1 LIMIT 5000`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	links := make([]map[string]any, 0)
+	for rows.Next() {
+		var a, b, kind string
+		var strength float64
+		if err := rows.Scan(&a, &b, &kind, &strength); err != nil {
+			return nil, err
+		}
+		links = append(links, map[string]any{"a": a, "b": b, "kind": kind, "strength": strength})
+	}
+	return links, rows.Err()
+}
+
 func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
+	// 과거 어느 날을 물으면 그 시점 기준으로 다시 계산해 돌려준다.
+	at, historical, err := parseOrbitAt(r.URL.Query().Get("at"))
+	if err != nil {
+		writeError(w, 400, "validation_error", err.Error())
+		return
+	}
+	if historical {
+		s.writeOrbitAt(w, r, at)
+		return
+	}
 	rows, err := s.store.DB.Query(r.Context(), `SELECT p.id,p.display_name,p.avatar_url,r.importance,r.closeness,r.momentum,r.stable_x,r.stable_y,r.categories,r.relationship_label,r.last_interaction_at,r.anchored,(SELECT count(*) FROM memories m WHERE m.user_id=p.user_id AND m.person_id=p.id AND m.status='approved') FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.user_id=$1 ORDER BY r.importance DESC LIMIT 1000`, u.ID)
 	if err != nil {
 		internalError(w, r, err)
@@ -698,23 +727,8 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	linkRows, err := s.store.DB.Query(r.Context(), `SELECT person_a,person_b,kind,strength FROM person_links WHERE user_id=$1 LIMIT 5000`, u.ID)
+	links, err := s.orbitLinks(r.Context(), u.ID)
 	if err != nil {
-		internalError(w, r, err)
-		return
-	}
-	defer linkRows.Close()
-	links := make([]map[string]any, 0)
-	for linkRows.Next() {
-		var a, b, kind string
-		var strength float64
-		if err := linkRows.Scan(&a, &b, &kind, &strength); err != nil {
-			internalError(w, r, err)
-			return
-		}
-		links = append(links, map[string]any{"a": a, "b": b, "kind": kind, "strength": strength})
-	}
-	if err := linkRows.Err(); err != nil {
 		internalError(w, r, err)
 		return
 	}
@@ -723,7 +737,12 @@ func (s *Server) getOrbit(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "links": links, "categories": categories, "generated_at": time.Now()})
+	first, err := s.orbitRange(r.Context(), u.ID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"center": map[string]string{"id": u.ID, "name": u.DisplayName}, "nodes": nodes, "contexts": contexts, "links": links, "categories": categories, "earliest_at": first, "generated_at": time.Now()})
 }
 
 func (s *Server) rediscover(w http.ResponseWriter, r *http.Request) {

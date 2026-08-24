@@ -110,6 +110,7 @@ export function OrbitCanvas({
   focus,
   forecastDays,
   categoryOrder,
+  asOf,
 }: {
   nodes: OrbitNode[];
   centerName: string;
@@ -124,6 +125,11 @@ export function OrbitCanvas({
   focus?: string[];
   /** 이 일수 뒤의 예상 궤도를 유령 행성으로 겹쳐 보여줍니다. */
   forecastDays?: number;
+  /**
+   * 상태를 판정할 기준 시각. 과거로 여행했을 때는 그날을 넘긴다. 오늘을
+   * 기준으로 두면 그 시절 막 만난 사람까지 전부 다크 오빗이 된다.
+   */
+  asOf?: number;
   /**
    * 소속 색을 배정할 기준 목록. 화면이 일부만 들고 있어도 같은 소속이 같은
    * 색이 되도록, 서버가 준 사용자의 소속 전체를 넘긴다.
@@ -148,7 +154,7 @@ export function OrbitCanvas({
   const scale =
     Math.round(Math.min(size.width, size.height) / 8) * 8 * 0.37;
   const layout = useMemo<DrawNode[]>(() => {
-    const now = Date.now();
+    const now = asOf ?? Date.now();
     // 소속 모양은 목록 전체를 보고 배정한다. 해시로 고르면 소속이 여덟 개만
     // 되어도 서로 같은 모양이 나오기 쉽다. 기준 목록이 있으면 그것을 쓴다 —
     // 화면에 보이는 사람만으로 배정하면 필터에 따라 색이 바뀐다.
@@ -220,7 +226,7 @@ export function OrbitCanvas({
       }
     }
     return raw;
-  }, [nodes, scale, categoryOrder]);
+  }, [nodes, scale, categoryOrder, asOf]);
   const ghosts = useMemo(() => {
     if (!forecastDays) return [];
     return layout.flatMap((node) => {

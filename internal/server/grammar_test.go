@@ -241,3 +241,50 @@ func TestRelationshipMetricsReadRecentContact(t *testing.T) {
 		}
 	})
 }
+
+// 시간 여행의 입구. 날짜만 준 경우와 시각까지 준 경우를 모두 받는다.
+func TestParseOrbitAtAcceptsDatesAndRejectsNonsense(t *testing.T) {
+	if _, ok, err := parseOrbitAt(""); ok || err != nil {
+		t.Fatalf("빈 값은 현재 시점을 뜻해야 한다: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := parseOrbitAt("   "); ok || err != nil {
+		t.Fatalf("공백도 현재 시점이어야 한다: ok=%v err=%v", ok, err)
+	}
+	at, ok, err := parseOrbitAt("2025-06-01")
+	if !ok || err != nil {
+		t.Fatalf("날짜만 준 값을 받아야 한다: %v", err)
+	}
+	if at.Year() != 2025 || at.Month() != 6 || at.Day() != 1 {
+		t.Fatalf("2025-06-01을 기대했으나 %v", at)
+	}
+	if _, ok, err = parseOrbitAt("2025-06-01T09:30:00Z"); !ok || err != nil {
+		t.Fatalf("시각까지 준 값도 받아야 한다: %v", err)
+	}
+	for _, bad := range []string{"어제", "2025/06/01", "06-01-2025", "0"} {
+		if _, _, err := parseOrbitAt(bad); err == nil {
+			t.Fatalf("%q는 거절해야 한다", bad)
+		}
+	}
+}
+
+// 시간 여행의 핵심 성질: 같은 교류라도 기준 시각을 옮기면 다른 상태가 나온다.
+// 이력 테이블 없이 과거를 되살릴 수 있는 근거이기도 하다.
+func TestRelationshipMetricsDependOnTheAskedMoment(t *testing.T) {
+	meeting := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	points := []interactionPoint{{meeting, 1}}
+
+	justAfter := meeting.AddDate(0, 0, 3)
+	_, freshCloseness, freshMomentum := relationshipMetrics(points, justAfter)
+	if freshMomentum <= 0 {
+		t.Fatalf("막 만난 뒤에는 다가오는 흐름이어야 한다: %v", freshMomentum)
+	}
+
+	muchLater := meeting.AddDate(0, 8, 0)
+	_, staleCloseness, staleMomentum := relationshipMetrics(points, muchLater)
+	if staleCloseness >= freshCloseness {
+		t.Fatalf("시간이 지나면 친밀도가 낮아져야 한다: %v → %v", freshCloseness, staleCloseness)
+	}
+	if staleMomentum != 0 {
+		t.Fatalf("창 밖으로 나가면 흐름은 0이어야 한다: %v", staleMomentum)
+	}
+}
