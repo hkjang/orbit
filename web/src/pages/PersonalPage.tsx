@@ -20,6 +20,7 @@ import {
   Typography,
   useColorScheme,
 } from "@mui/material";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
@@ -244,6 +245,37 @@ function EncryptionPanel() {
               {message}
             </Alert>
           )}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: { xs: "flex-start", sm: "center" },
+              gap: 2,
+              flexDirection: { xs: "column", sm: "row" },
+              mb: 3,
+              pb: 3,
+              borderBottom: "1px solid",
+              borderColor: "divider",
+            }}
+          >
+            <Box>
+              <Typography variant="h2">내 기록 내보내기</Typography>
+              <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                사람, 교류, 기억, 연결을 읽을 수 있는 JSON 한 파일로 내려받습니다.
+                암호화된 내용도 복호화해 담기므로 안전한 곳에 보관하세요.
+              </Typography>
+            </Box>
+            {/* 서버가 파일로 내려주므로 브라우저에 맡긴다. 같은 출처라 세션이 그대로 실린다. */}
+            <Button
+              component="a"
+              href="/api/v1/personal/export"
+              variant="outlined"
+              startIcon={<DownloadRoundedIcon />}
+              sx={{ flexShrink: 0 }}
+            >
+              내보내기
+            </Button>
+          </Box>
           <Box
             sx={{
               display: "flex",

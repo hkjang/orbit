@@ -67,6 +67,7 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 			p.Get("/api-keys", s.listAPIKeys)
 			p.Post("/api-keys", s.createAPIKey)
 			p.Delete("/api-keys/{keyID}", s.revokeAPIKey)
+			p.Get("/export", s.exportData)
 		})
 		api.Route("/admin", func(a chi.Router) {
 			a.Use(s.requireRole("admin"))

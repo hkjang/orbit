@@ -14,6 +14,7 @@ func (s *Server) openAPI(w http.ResponseWriter, _ *http.Request) {
 			"/people/":                          map[string]any{"get": operation("사람 검색 및 목록", "people:read"), "post": operation("사람 등록", "people:write")},
 			"/people/{personID}":                map[string]any{"get": operation("관계 상세 조회", "people:read"), "put": operation("사람 및 관계 수정", "people:write"), "delete": operation("사람 삭제", "people:write")},
 			"/people/{personID}/interactions":   map[string]any{"post": operation("교류 기록", "people:write")},
+			"/personal/export":                  map[string]any{"get": operation("내 기록 전체 내보내기", "people:read")},
 			"/people/{personID}/anchor":         map[string]any{"post": operation("관계 고정(Anchor) 설정", "people:write")},
 			"/people/{personID}/links":          map[string]any{"get": operation("사람 간 연결 목록", "people:read"), "post": operation("사람 간 연결 추가/수정", "people:write")},
 			"/people/{personID}/links/{linkID}": map[string]any{"delete": operation("사람 간 연결 삭제", "people:write")},
