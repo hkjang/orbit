@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -240,7 +241,18 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 	}
 	state := id.Token(24)
 	nonce := id.Token(24)
-	payload, _ := json.Marshal(map[string]string{"state": state, "nonce": nonce})
+	// 조용한 시도인지와 돌아갈 자리는 콜백이 알아야 하므로 state와 함께 봉인해
+	// 쿠키에 싣는다. 브라우저가 고칠 수 없는 자리다.
+	silent := silentOIDCRequested(settings, r.URL.Query())
+	returnTo := r.URL.Query().Get("return_to")
+	if !safeReturnTo(returnTo) {
+		returnTo = ""
+	}
+	stateData := map[string]string{"state": state, "nonce": nonce, "return_to": returnTo}
+	if silent {
+		stateData["silent"] = "true"
+	}
+	payload, _ := json.Marshal(stateData)
 	sealed, err := s.store.Vault.EncryptSystem(string(payload), "oidc-state")
 	if err != nil {
 		internalError(w, r, err)
@@ -249,23 +261,74 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 	secureCookie := r.TLS != nil || strings.HasPrefix(strings.ToLower(strings.TrimSpace(redirectURL)), "https://")
 	http.SetCookie(w, &http.Cookie{Name: "orbit_oidc_state", Value: sealed, Path: "/api/v1/auth/oidc/callback", HttpOnly: true, Secure: secureCookie, SameSite: http.SameSiteLaxMode, MaxAge: 600})
 	conf := oauth2.Config{ClientID: settings.ClientID, ClientSecret: settings.ClientSecret, Endpoint: provider.Endpoint(), RedirectURL: redirectURL, Scopes: []string{oidc.ScopeOpenID, "profile", "email"}}
-	http.Redirect(w, r, conf.AuthCodeURL(state, oidc.Nonce(nonce)), http.StatusFound)
+	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce)}
+	if silent {
+		// prompt=none은 화면을 절대 그리지 않는다. 제공자에 세션이 있으면 코드가
+		// 곧바로 돌아오고, 없으면 error=login_required로 돌아온다.
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "none"))
+	}
+	http.Redirect(w, r, conf.AuthCodeURL(state, opts...), http.StatusFound)
 }
 
-func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
+// silentOIDCRequested는 이번 시작 요청이 prompt=none을 써도 되는지 답한다.
+// 관리자가 auto_login을 켰을 때만 허용한다 — 누구든 주소에 ?prompt=none을 붙여
+// 흐름을 바꿀 수 있으면 리다이렉트가 생기는 자리가 설정 밖으로 나간다.
+func silentOIDCRequested(settings OIDCSettings, query url.Values) bool {
+	return settings.AutoLogin && query.Get("prompt") == "none"
+}
+
+// safeReturnTo는 로그인 뒤 돌아갈 자리로 같은 사이트 안의 경로만 받는다.
+// "//host"나 절대 URL을 받으면 이 로그인 흐름이 밖으로 내보내는 발판이 된다.
+func safeReturnTo(value string) bool {
+	if value == "" || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || strings.ContainsAny(value, "\r\n\\") {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	return err == nil && !parsed.IsAbs() && parsed.Host == ""
+}
+
+// oidcRefusalTarget은 제공자가 error로 답했을 때 브라우저를 보낼 자리다.
+// 조용한 시도가 거절되면 /login?sso=none으로 보내 주소에 표시를 남긴다 — 브라우저
+// 저장소가 지워졌더라도 이 표시가 있으면 화면이 다시 시도하지 않아 루프가 막힌다.
+func oidcRefusalTarget(silent bool) string {
+	if silent {
+		return "/login?sso=none"
+	}
+	return "/login?sso=error"
+}
+
+// oidcState는 시작 때 봉인해 둔 쿠키를 풀어 콜백의 state와 맞춰 본다.
+func (s *Server) oidcState(r *http.Request) (map[string]string, error) {
 	cookie, err := r.Cookie("orbit_oidc_state")
 	if err != nil {
-		writeError(w, 400, "invalid_oidc_state", "SSO 요청이 만료되었습니다.")
-		return
+		return nil, errors.New("SSO 요청이 만료되었습니다.")
 	}
 	plain, err := s.store.Vault.DecryptSystem(cookie.Value, "oidc-state")
 	if err != nil {
-		writeError(w, 400, "invalid_oidc_state", "SSO 요청을 확인할 수 없습니다.")
-		return
+		return nil, errors.New("SSO 요청을 확인할 수 없습니다.")
 	}
 	var stateData map[string]string
 	if json.Unmarshal([]byte(plain), &stateData) != nil || subtle.ConstantTimeCompare([]byte(stateData["state"]), []byte(r.URL.Query().Get("state"))) != 1 {
-		writeError(w, 400, "invalid_oidc_state", "SSO 상태가 일치하지 않습니다.")
+		return nil, errors.New("SSO 상태가 일치하지 않습니다.")
+	}
+	return stateData, nil
+}
+
+func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
+	stateData, stateErr := s.oidcState(r)
+	// 제공자는 거절을 code 대신 error 파라미터로 알린다. prompt=none은 세션이
+	// 없을 때마다 login_required를 돌려주는데, 그것은 실패가 아니라 평범한
+	// 대답이므로 오류 화면이 아니라 로그인 화면으로 보낸다.
+	if providerError := r.URL.Query().Get("error"); providerError != "" {
+		silent := stateErr == nil && stateData["silent"] == "true"
+		if !silent {
+			slog.Warn("OIDC provider returned an error", "error", providerError)
+		}
+		http.Redirect(w, r, oidcRefusalTarget(silent), http.StatusFound)
+		return
+	}
+	if stateErr != nil {
+		writeError(w, 400, "invalid_oidc_state", stateErr.Error())
 		return
 	}
 	settings, redirectURL, err := s.oidcConfig(r.Context())
@@ -320,8 +383,13 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		internalError(w, r, err)
 		return
 	}
-	s.audit(r.Context(), u.ID, "auth.login", "session", "", r.RemoteAddr, map[string]any{"method": "oidc"})
-	http.Redirect(w, r, "/orbit", http.StatusFound)
+	s.audit(r.Context(), u.ID, "auth.login", "session", "", r.RemoteAddr, map[string]any{"method": "oidc", "silent": stateData["silent"] == "true"})
+	// 깊은 링크로 들어온 사람은 로그인한 뒤 그 자리로 돌아간다.
+	target := "/orbit"
+	if returnTo := stateData["return_to"]; safeReturnTo(returnTo) {
+		target = returnTo
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func (s *Server) findOrProvisionOIDCUser(ctx context.Context, settings OIDCSettings, subject, email string, emailVerified bool, username, name string) (User, error) {

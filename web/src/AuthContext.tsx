@@ -8,6 +8,12 @@ import {
 } from "react";
 import { useColorScheme } from "@mui/material";
 import { api, setUnauthorizedHandler } from "./api";
+import {
+  beginSilentSso,
+  clearSilentSsoState,
+  markSignedOut,
+  shouldAttemptSilentSso,
+} from "./silentSso";
 import type { PublicConfig, User } from "./types";
 
 interface AuthState {
@@ -55,11 +61,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     Promise.all([
       fetch("/api/v1/public/config")
-        .then((r) => r.json())
-        .then(setConfig)
-        .catch(() => undefined),
-      refresh(),
-    ]).finally(() => setLoading(false));
+        .then((r) => r.json() as Promise<PublicConfig>)
+        .catch(() => null),
+      api<{ user: User }>("/me")
+        .then((result) => result.user)
+        .catch(() => null),
+    ]).then(([publicConfig, me]) => {
+      setConfig(publicConfig);
+      setUser(me);
+      if (me) {
+        clearSilentSsoState();
+      } else if (shouldAttemptSilentSso(publicConfig, window.location)) {
+        // 로그인 화면을 그리기 전에 제공자에게 다녀온다. 최상위 이동이라
+        // 서드파티 쿠키가 막힌 브라우저에서도 동작한다. loading을 내려놓지
+        // 않아야 떠나는 동안 로그인 화면이 깜빡이지 않는다.
+        window.location.assign(
+          beginSilentSso(window.location.pathname + window.location.search),
+        );
+        return;
+      }
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -92,9 +114,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         setExpired(false);
         setUser(result.user);
+        clearSilentSsoState();
       },
       logout: async () => {
         await api("/auth/logout", { method: "POST", body: "{}" });
+        // 스스로 로그아웃한 뒤 조용히 다시 로그인시키면 로그아웃이 고장 난
+        // 것처럼 보인다. 다음 세션이 생길 때까지 억제한다.
+        markSignedOut();
         setExpired(false);
         setUser(null);
       },

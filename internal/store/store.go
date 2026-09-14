@@ -138,7 +138,7 @@ func (s *Store) Bootstrap(ctx context.Context, username, password string) error 
 	}
 	defaults := []struct{ ns, key, value string }{
 		{"system", "general", `{"service_name":"Orbit","public_url":"http://localhost:8080","session_hours":12}`},
-		{"auth", "oidc", `{"enabled":false,"issuer_url":"","client_id":"","display_name":"Keycloak SSO","auto_provision":true,"default_role":"member"}`},
+		{"auth", "oidc", `{"enabled":false,"issuer_url":"","client_id":"","display_name":"Keycloak SSO","auto_provision":true,"default_role":"member","auto_login":false}`},
 		{"ai", "provider", `{"enabled":false,"provider":"openai-compatible","base_url":"","model":"","max_output_tokens":8192,"request_timeout_seconds":120,"system_prompt":"답변은 제공된 관계 기록에 근거하고, 모르는 내용은 추측하지 마세요."}`},
 		{"workflow", "approval", `{"enabled":false,"resource_types":["memory"],"reviewer_role":"team_lead"}`},
 		{"security", "key_policy", `{"rotation_days":90,"allow_user_rotation":true,"default_scopes":["people:read","memories:read"]}`},

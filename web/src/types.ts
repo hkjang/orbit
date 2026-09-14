@@ -14,7 +14,7 @@ export interface PublicConfig {
   version: string;
   commit: string;
   built_at: string;
-  oidc: { enabled: boolean; display_name: string };
+  oidc: { enabled: boolean; display_name: string; auto_login: boolean };
 }
 
 export interface Person {

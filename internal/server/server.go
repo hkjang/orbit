@@ -121,7 +121,9 @@ func (s *Server) publicConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"service_name": serviceName, "version": s.version, "commit": s.commit, "built_at": s.builtAt,
-		"oidc": map[string]any{"enabled": oidc.Enabled, "display_name": oidc.DisplayName},
+		// auto_login은 화면이 로그인 폼을 그리기 전에 조용한 로그인을 시도할지
+		// 정하는 데 쓴다.
+		"oidc": map[string]any{"enabled": oidc.Enabled, "display_name": oidc.DisplayName, "auto_login": oidc.Enabled && oidc.AutoLogin},
 	})
 }
 
