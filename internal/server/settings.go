@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hkjang/orbit/internal/id"
+	"github.com/hkjang/orbit/internal/tracking"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -51,6 +52,8 @@ func (s *Server) getAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result["security"] = policy
+	// 추적 행은 이후 버전에서 생겼으므로 없으면 기본값(꺼짐)으로 보여 준다.
+	result["tracking"] = s.trackingSettings(r.Context())
 	writeJSON(w, 200, map[string]any{"settings": result})
 }
 
@@ -162,6 +165,17 @@ func (s *Server) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.saveSetting(w, r, u, "security", "key_policy", v, "")
+	case "tracking":
+		var v tracking.Settings
+		if !decodeJSON(w, r, &v) {
+			return
+		}
+		v = v.Normalized()
+		if err := v.Validate(); err != nil {
+			writeError(w, 400, "validation_error", err.Error())
+			return
+		}
+		s.saveSetting(w, r, u, "system", "tracking", v, "")
 	default:
 		writeError(w, 404, "not_found", "설정 영역을 찾을 수 없습니다.")
 	}

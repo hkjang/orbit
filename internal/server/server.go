@@ -13,24 +13,27 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hkjang/orbit/internal/store"
+	"github.com/hkjang/orbit/internal/tracking"
 	"github.com/hkjang/orbit/internal/webui"
 )
 
 type Server struct {
-	store   *store.Store
-	version string
-	commit  string
-	builtAt string
+	store      *store.Store
+	version    string
+	commit     string
+	builtAt    string
+	violations *tracking.Recorder
 }
 
 func New(st *store.Store, version, commit, builtAt string) http.Handler {
-	s := &Server{store: st, version: version, commit: commit, builtAt: builtAt}
+	s := &Server{store: st, version: version, commit: commit, builtAt: builtAt, violations: tracking.NewRecorder()}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer, s.securityHeaders)
 	r.Use(middleware.Timeout(11 * time.Minute))
 	r.Get("/healthz", s.health)
 	r.Get("/readyz", s.ready)
 	r.Get("/api/v1/public/config", s.publicConfig)
+	r.Post(cspReportPath, s.receiveCSPReport)
 	r.Post("/api/v1/auth/login", s.localLogin)
 	r.Get("/api/v1/auth/oidc/start", s.oidcStart)
 	r.Get("/api/v1/auth/oidc/callback", s.oidcCallback)
@@ -79,10 +82,14 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 			a.Get("/audit", s.listAudit)
 			a.Get("/key-permissions", s.listKeyPermissions)
 			a.Put("/key-permissions/{permissionID}", s.updateKeyPermission)
+			a.Get("/tracking/violations", s.listTrackingViolations)
+			a.Delete("/tracking/violations", s.clearTrackingViolations)
+			a.Post("/tracking/violations/allow", s.allowTrackingHost)
 		})
 	})
 	r.Handle("/mcp", s.authenticate(http.HandlerFunc(s.mcp)))
 	r.Get("/openapi.json", s.openAPI)
+	r.Handle(tracking.ProxyPath+"/*", s.momentoProxy())
 	r.Handle("/*", s.spa())
 	return r
 }
@@ -93,7 +100,13 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'")
+		// 화면 경로는 좁은 기본 정책을 받고, 페이지 셸을 내보낼 때 그 요청의
+		// nonce 와 추적 출처를 더한 정책으로 바뀐다. 화면이 아닌 경로는 더 좁다.
+		policy := apiPolicy
+		if isPagePath(r.URL.Path) {
+			policy = pagePolicy(tracking.Defaults(), r.URL.Path, "")
+		}
+		w.Header().Set("Content-Security-Policy", policy)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -144,9 +157,7 @@ func (s *Server) spa() http.Handler {
 			http.Error(w, "UI unavailable", 503)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(index)
+		servePage(w, r, s.trackingSettings(r.Context()), index)
 	})
 }
 

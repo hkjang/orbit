@@ -30,6 +30,17 @@ import { useAuth } from "../AuthContext";
 import { PageHeader } from "../components/PageHeader";
 import { ErrorView, LoadingView } from "../components/StateViews";
 import type { User } from "../types";
+import {
+  MAX_SNIPPET_BYTES,
+  MOMENTO_PROXY_PATH,
+  TRACKING_PROVIDERS,
+  policySources,
+  snippetBytes,
+  trackingIssue,
+  type TrackingProvider,
+  type TrackingSettings,
+  type TrackingViolation,
+} from "../tracking";
 
 interface AdminSettings {
   system: { service_name: string; public_url: string; session_hours: number };
@@ -70,12 +81,14 @@ interface AdminSettings {
     allow_user_rotation: boolean;
     default_scopes: string[];
   };
+  tracking: TrackingSettings;
 }
 const tabs = [
   "일반",
   "Keycloak SSO",
   "AI",
   "승인 프로세스",
+  "방문 추적",
   "사용자",
   "키 권한",
   "감사 로그",
@@ -157,8 +170,13 @@ export function AdminPage() {
           changed={(v) => setSettings({ ...settings, workflow: v })}
         />
       ) : tab === 4 ? (
-        <UsersPanel />
+        <TrackingPanel
+          value={settings.tracking}
+          changed={(v) => setSettings({ ...settings, tracking: v })}
+        />
       ) : tab === 5 ? (
+        <UsersPanel />
+      ) : tab === 6 ? (
         <SecurityPanel
           value={settings.security}
           changed={(v) => setSettings({ ...settings, security: v })}
@@ -576,6 +594,308 @@ function WorkflowSettings({
       >
         프로세스 저장
       </Button>
+    </Panel>
+  );
+}
+
+function TrackingPanel({
+  value,
+  changed,
+}: {
+  value: TrackingSettings;
+  changed: (v: TrackingSettings) => void;
+}) {
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [violations, setViolations] = useState<TrackingViolation[]>([]);
+  const issue = trackingIssue(value);
+  const sources = policySources(value);
+  const bytes = snippetBytes(value.custom_snippet);
+  const update = (patch: Partial<TrackingSettings>) =>
+    changed({ ...value, ...patch });
+  const loadViolations = useCallback(async () => {
+    try {
+      const data = await api<{ violations: TrackingViolation[] }>(
+        "/admin/tracking/violations",
+      );
+      setViolations(data.violations);
+    } catch {
+      /* 진단 목록은 있으면 좋은 것이지 설정을 막을 이유가 아니다 */
+    }
+  }, []);
+  useEffect(() => {
+    void loadViolations();
+  }, [loadViolations]);
+  const call = async (work: () => Promise<void>, done: string) => {
+    setError("");
+    try {
+      await work();
+      setMessage(done);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "요청을 처리하지 못했습니다.");
+    }
+  };
+  const save = () =>
+    call(
+      async () => {
+        await api("/admin/settings/tracking", {
+          method: "PUT",
+          body: JSON.stringify(value),
+        });
+      },
+      value.enabled
+        ? "방문 추적을 켰습니다."
+        : "방문 추적 설정을 저장했습니다.",
+    );
+  const allow = (origin: string) =>
+    call(async () => {
+      await api("/admin/tracking/violations/allow", {
+        method: "POST",
+        body: JSON.stringify({ origin }),
+      });
+      const data = await api<{ settings: AdminSettings }>("/admin/settings");
+      changed(data.settings.tracking);
+      await loadViolations();
+    }, `${origin} 을(를) 허용 목록에 더했습니다.`);
+  const forget = () =>
+    call(async () => {
+      await api("/admin/tracking/violations", { method: "DELETE" });
+      setViolations([]);
+    }, "차단 기록을 비웠습니다.");
+  return (
+    <Panel
+      title="방문 추적"
+      description="어떤 화면이 실제로 쓰이는지 재는 스크립트를 붙입니다. 기본은 꺼짐이며, 켜도 정책은 좁은 채로 요청마다 nonce 를 달아 실행합니다."
+    >
+      <SaveNotice message={message} />
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={value.enabled}
+            onChange={(e) => update({ enabled: e.target.checked })}
+          />
+        }
+        label="방문 추적 사용"
+      />
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+          gap: 2,
+          mt: 2,
+        }}
+      >
+        <TextField
+          select
+          label="추적 도구"
+          value={value.provider}
+          onChange={(e) =>
+            update({ provider: e.target.value as TrackingProvider })
+          }
+          helperText="Momento 는 사내 수집기라 데이터가 밖으로 나가지 않습니다."
+        >
+          {TRACKING_PROVIDERS.map((provider) => (
+            <MenuItem key={provider.value} value={provider.value}>
+              {provider.label}
+            </MenuItem>
+          ))}
+          <MenuItem value="none">
+            <em>선택 안 함</em>
+          </MenuItem>
+        </TextField>
+        <TextField
+          select
+          label="넣는 자리"
+          value={value.placement}
+          onChange={(e) =>
+            update({
+              placement: e.target.value as TrackingSettings["placement"],
+            })
+          }
+        >
+          <MenuItem value="head">head 끝 (권장)</MenuItem>
+          <MenuItem value="body">body 끝</MenuItem>
+        </TextField>
+        {value.provider === "momento" && (
+          <>
+            <TextField
+              label="Momento 수집기 주소"
+              placeholder="https://momento.internal"
+              value={value.momento_url}
+              onChange={(e) => update({ momento_url: e.target.value })}
+            />
+            <TextField
+              label="사이트 ID"
+              placeholder="SITE_XXXXXXXX"
+              value={value.momento_site_id}
+              onChange={(e) => update({ momento_site_id: e.target.value })}
+            />
+            <FormControlLabel
+              sx={{ gridColumn: "1/-1" }}
+              control={
+                <Checkbox
+                  checked={value.momento_proxy}
+                  onChange={(e) => update({ momento_proxy: e.target.checked })}
+                />
+              }
+              label={`같은 오리진 프록시 사용 (${MOMENTO_PROXY_PATH}/* 를 수집기로 넘깁니다 — 정책에 외부 출처가 등장하지 않습니다)`}
+            />
+          </>
+        )}
+        {(value.provider === "ga4" || value.provider === "gtm") && (
+          <TextField
+            sx={{ gridColumn: "1/-1" }}
+            label={value.provider === "ga4" ? "측정 ID" : "컨테이너 ID"}
+            placeholder={
+              value.provider === "ga4" ? "G-XXXXXXXXXX" : "GTM-XXXXXXX"
+            }
+            value={value.measurement_id}
+            onChange={(e) => update({ measurement_id: e.target.value })}
+          />
+        )}
+        {value.provider === "matomo" && (
+          <>
+            <TextField
+              label="Matomo 주소"
+              placeholder="https://matomo.internal"
+              value={value.matomo_url}
+              onChange={(e) => update({ matomo_url: e.target.value })}
+            />
+            <TextField
+              label="사이트 ID"
+              value={value.matomo_site_id}
+              onChange={(e) => update({ matomo_site_id: e.target.value })}
+            />
+          </>
+        )}
+        {value.provider === "custom" && (
+          <TextField
+            sx={{ gridColumn: "1/-1" }}
+            multiline
+            minRows={5}
+            label="추적 코드"
+            placeholder={'<script async src="https://…/tracker.js"></script>'}
+            value={value.custom_snippet}
+            onChange={(e) => update({ custom_snippet: e.target.value })}
+            error={bytes > MAX_SNIPPET_BYTES}
+            helperText={`${bytes.toLocaleString()} / ${MAX_SNIPPET_BYTES.toLocaleString()} 바이트. 모든 <script> 태그에 요청마다 nonce 가 붙습니다.`}
+            slotProps={{
+              input: { sx: { fontFamily: "monospace", fontSize: 13 } },
+            }}
+          />
+        )}
+        <TextField
+          sx={{ gridColumn: "1/-1" }}
+          label="추가 허용 출처"
+          placeholder="https://cdn.example, https://collect.example"
+          value={value.allowed_hosts}
+          onChange={(e) => update({ allowed_hosts: e.target.value })}
+          helperText="스니펫에서 자동으로 읽지 못한 출처를 쉼표로 더합니다. 아래 차단 목록에서 한 번 눌러 넣을 수도 있습니다."
+        />
+        <FormControlLabel
+          sx={{ gridColumn: "1/-1" }}
+          control={
+            <Checkbox
+              checked={value.include_admin}
+              onChange={(e) => update({ include_admin: e.target.checked })}
+            />
+          }
+          label="관리 화면(/admin)도 추적"
+        />
+      </Box>
+      {issue ? (
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          {issue}
+        </Alert>
+      ) : value.enabled && value.provider !== "none" ? (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          {sources.length === 0
+            ? "정책에 더해지는 외부 출처가 없습니다. 스니펫은 요청마다 붙는 nonce 로만 허용됩니다."
+            : `script-src · connect-src · img-src 에 더해지는 출처: ${sources.join(", ")}`}
+        </Alert>
+      ) : null}
+      <Button
+        variant="contained"
+        startIcon={<SaveRoundedIcon />}
+        onClick={save}
+        disabled={Boolean(issue)}
+        sx={{ mt: 3 }}
+      >
+        추적 설정 저장
+      </Button>
+      <Divider sx={{ my: 3 }} />
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 1,
+        }}
+      >
+        <Box>
+          <Typography variant="h3">정책이 막은 출처</Typography>
+          <Typography color="text.secondary" variant="body2">
+            추적이 켜진 동안 브라우저가 신고한 차단입니다. 화면이 비어 있는데
+            수집이 들어오지 않으면 여기를 봅니다.
+          </Typography>
+        </Box>
+        <Box sx={{ display: "flex", gap: 1 }}>
+          <Button size="small" onClick={loadViolations}>
+            새로 고침
+          </Button>
+          <Button
+            size="small"
+            onClick={forget}
+            disabled={violations.length === 0}
+          >
+            비우기
+          </Button>
+        </Box>
+      </Box>
+      {violations.length === 0 ? (
+        <Typography color="text.secondary" variant="body2">
+          기록된 차단이 없습니다.
+        </Typography>
+      ) : (
+        <Box sx={{ display: "grid", gap: 1 }}>
+          {violations.map((violation) => (
+            <Box
+              key={`${violation.directive} ${violation.origin}`}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1.5,
+                flexWrap: "wrap",
+              }}
+            >
+              <Chip
+                size="small"
+                label={violation.directive}
+                color={violation.allowed ? "default" : "warning"}
+                variant="outlined"
+              />
+              <Typography sx={{ fontFamily: "monospace", fontSize: 13 }}>
+                {violation.origin}
+              </Typography>
+              <Typography color="text.secondary" variant="body2">
+                {violation.count}회 · {formatDate(violation.last_seen, true)}
+              </Typography>
+              {violation.allowed ? (
+                <Chip size="small" label="허용됨" color="success" />
+              ) : (
+                <Button size="small" onClick={() => allow(violation.origin)}>
+                  허용에 더하기
+                </Button>
+              )}
+            </Box>
+          ))}
+        </Box>
+      )}
     </Panel>
   );
 }

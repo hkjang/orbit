@@ -76,3 +76,4 @@ flowchart TD
 ### 2.9 서비스 관리 콘솔 (`/admin`)
 ![관리자 설정](images/14_admin_service_console.png)
 - 서비스 기본 정보, Keycloak OIDC SSO Discovery, AI 모델 및 토큰 한도(최대 256K), RBAC 권한 정책
+- 방문 추적: Momento(사내 수집기)·GA4·GTM·Matomo·직접 붙여 넣기 스니펫을 CSP nonce 로 안전하게 붙이고, 정책이 막은 출처를 보고 허용 — [관리자 가이드](ADMIN_GUIDE.md#방문-추적)
