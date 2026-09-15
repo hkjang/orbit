@@ -11,17 +11,29 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   InputAdornment,
+  Link,
+  Menu,
   MenuItem,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import AutoStoriesRoundedIcon from "@mui/icons-material/AutoStoriesRounded";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import { api, formatDate } from "../api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
+import {
+  canHandoff,
+  handoffURL,
+  type HandoffClaim,
+  type HandoffTarget,
+  type HandoffTargets,
+} from "../handoff";
 import type { Memory, Person } from "../types";
 
 const STATUS_FILTERS = [
@@ -37,6 +49,13 @@ export function MemoriesPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
+  // 보낼 곳은 관리자의 허용 목록에서 온다. 비어 있으면 단추가 없다.
+  const [targets, setTargets] = useState<HandoffTarget[]>([]);
+  const [handoff, setHandoff] = useState<{
+    severity: "error" | "info";
+    message: string;
+    url?: string;
+  }>();
   // 무엇을 보고 있는지는 주소에 남긴다. 기억은 다시 찾아올 대상이라,
   // 링크로 돌아왔을 때 같은 화면이 나와야 한다.
   const query = params.get("q") ?? "";
@@ -69,6 +88,42 @@ export function MemoriesPage() {
     const timer = setTimeout(() => void load(), 200);
     return () => clearTimeout(timer);
   }, [load]);
+  useEffect(() => {
+    // 목록을 못 읽어도 기억 화면은 그대로다 — 단추만 없다.
+    api<HandoffTargets>("/handoff/targets")
+      .then((v) => setTargets(v.targets))
+      .catch(() => setTargets([]));
+  }, []);
+  const send = async (memory: Memory, target: HandoffTarget) => {
+    setHandoff(undefined);
+    // 팝업 차단을 피하려면 사용자 동작 안에서 창을 먼저 열어 두고, 표를 받은
+    // 뒤에 그 창을 받는 쪽으로 보낸다. 받는 쪽에 이 창을 쥐여 주지 않는다.
+    const win = window.open("", "_blank");
+    if (win) win.opener = null;
+    try {
+      const claim = await api<HandoffClaim>("/handoff/claims", {
+        method: "POST",
+        body: JSON.stringify({ resource: memory.id, format: "markdown" }),
+      });
+      const url = handoffURL(target, claim);
+      if (win) {
+        win.location.href = url;
+        return;
+      }
+      setHandoff({
+        severity: "info",
+        message: `팝업이 막혀 ${target.name}을(를) 열지 못했습니다. 표는 5분 안에 한 번만 쓸 수 있습니다.`,
+        url,
+      });
+    } catch (e) {
+      win?.close();
+      setHandoff({
+        severity: "error",
+        message:
+          e instanceof Error ? e.message : "다른 서비스로 보내지 못했습니다.",
+      });
+    }
+  };
   const filtered = Boolean(query || personId || status);
   return (
     <>
@@ -139,6 +194,23 @@ export function MemoriesPage() {
           ))}
         </Box>
       </Box>
+      {handoff && (
+        <Alert
+          severity={handoff.severity}
+          onClose={() => setHandoff(undefined)}
+          sx={{ mb: 2 }}
+        >
+          {handoff.message}
+          {handoff.url && (
+            <>
+              {" "}
+              <Link href={handoff.url} target="_blank" rel="noopener">
+                여기를 눌러 여세요.
+              </Link>
+            </>
+          )}
+        </Alert>
+      )}
       {error ? (
         <ErrorView message={error} retry={load} />
       ) : !memories ? (
@@ -211,6 +283,12 @@ export function MemoriesPage() {
                       }
                     />
                   )}
+                  {canHandoff(targets, memory.status) && (
+                    <HandoffMenu
+                      targets={targets}
+                      onPick={(target) => void send(memory, target)}
+                    />
+                  )}
                 </Box>
                 <Typography
                   color="text.secondary"
@@ -256,6 +334,51 @@ export function MemoriesPage() {
         onClose={() => setOpen(false)}
         onSaved={load}
       />
+    </>
+  );
+}
+
+/**
+ * "다른 서비스로 보내기" — 문서를 보는 자리에 둔다. 목록의 이름을 고르면
+ * 새 창에서 받는 쪽이 열린다.
+ */
+function HandoffMenu({
+  targets,
+  onPick,
+}: {
+  targets: HandoffTarget[];
+  onPick: (target: HandoffTarget) => void;
+}) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <Tooltip title="다른 서비스로 보내기">
+        <IconButton
+          size="small"
+          aria-label="다른 서비스로 보내기"
+          aria-haspopup="menu"
+          onClick={(e) => setAnchor(e.currentTarget)}
+        >
+          <SendRoundedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        open={Boolean(anchor)}
+        anchorEl={anchor}
+        onClose={() => setAnchor(null)}
+      >
+        {targets.map((target) => (
+          <MenuItem
+            key={target.origin}
+            onClick={() => {
+              setAnchor(null);
+              onPick(target);
+            }}
+          >
+            {target.name}
+          </MenuItem>
+        ))}
+      </Menu>
     </>
   );
 }

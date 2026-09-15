@@ -20,6 +20,8 @@ func (s *Server) openAPI(w http.ResponseWriter, _ *http.Request) {
 			"/people/{personID}/links/{linkID}": map[string]any{"delete": operation("사람 간 연결 삭제", "people:write")},
 			"/memories/":                        map[string]any{"get": operation("기억 목록", "memories:read"), "post": operation("기억 생성", "memories:write")},
 			"/ai/stream":                        map[string]any{"post": operation("SSE 기반 AI 관계 질문", "ai:invoke")},
+			"/handoff/targets":                  map[string]any{"get": operation("기억을 보낼 수 있는 사내 서비스 목록", "memories:read")},
+			"/handoff/claims":                   map[string]any{"post": operation("기억 하나를 다른 서비스로 넘길 표(claim) 발급 — 5분, 단일 사용", "memories:read")},
 		},
 		"externalDocs": map[string]string{"description": "MCP Streamable HTTP endpoint", "url": "/mcp"},
 	}

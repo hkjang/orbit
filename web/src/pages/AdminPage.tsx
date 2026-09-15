@@ -70,12 +70,21 @@ interface AdminSettings {
     allow_user_rotation: boolean;
     default_scopes: string[];
   };
+  handoff: { targets: HandoffTargetSetting[] };
 }
+interface HandoffTargetSetting {
+  name: string;
+  origin: string;
+  formats: string[];
+}
+/** 표준의 형식 표 전체. Orbit 은 markdown 만 보낸다. */
+const HANDOFF_FORMATS = ["markdown", "docx", "csv", "xlsx", "txt", "pptx"];
 const tabs = [
   "일반",
   "Keycloak SSO",
   "AI",
   "승인 프로세스",
+  "다른 서비스로 보내기",
   "사용자",
   "키 권한",
   "감사 로그",
@@ -157,8 +166,13 @@ export function AdminPage() {
           changed={(v) => setSettings({ ...settings, workflow: v })}
         />
       ) : tab === 4 ? (
-        <UsersPanel />
+        <HandoffSettingsPanel
+          value={settings.handoff ?? { targets: [] }}
+          changed={(v) => setSettings({ ...settings, handoff: v })}
+        />
       ) : tab === 5 ? (
+        <UsersPanel />
+      ) : tab === 6 ? (
         <SecurityPanel
           value={settings.security}
           changed={(v) => setSettings({ ...settings, security: v })}
@@ -576,6 +590,166 @@ function WorkflowSettings({
       >
         프로세스 저장
       </Button>
+    </Panel>
+  );
+}
+
+/**
+ * 다른 서비스로 보내기 — 허용 목록.
+ *
+ * 기본은 비어 있고, 그때는 기억 화면에 보내기 단추가 없다. 이름과 오리진,
+ * 그 서비스가 받는 형식을 적는다. Orbit 은 markdown 만 보내므로 markdown 을
+ * 받지 않는 항목은 저장되어도 단추에 오르지 않는다.
+ */
+function HandoffSettingsPanel({
+  value,
+  changed,
+}: {
+  value: AdminSettings["handoff"];
+  changed: (v: AdminSettings["handoff"]) => void;
+}) {
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const targets = value.targets ?? [];
+  const update = (index: number, patch: Partial<HandoffTargetSetting>) =>
+    changed({
+      targets: targets.map((t, i) => (i === index ? { ...t, ...patch } : t)),
+    });
+  const save = async () => {
+    setError("");
+    setMessage("");
+    try {
+      await api("/admin/settings/handoff", {
+        method: "PUT",
+        body: JSON.stringify({ targets }),
+      });
+      setMessage(
+        targets.length
+          ? "보낼 곳 목록을 저장했습니다."
+          : "보낼 곳 목록을 비웠습니다. 기억 화면에 보내기 단추가 사라집니다.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "저장하지 못했습니다.");
+    }
+  };
+  return (
+    <Panel
+      title="다른 서비스로 보내기"
+      description="기억을 마크다운 문서로 넘길 수 있는 사내 서비스의 허용 목록입니다. 비어 있으면 보내기 단추가 보이지 않습니다."
+    >
+      <SaveNotice message={message} />
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {targets.length === 0 && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          아직 적은 서비스가 없습니다. 받는 쪽 관리자에게는 이 서비스의 공개
+          URL 오리진을 허용 목록에 넣어 달라고 알려 주세요.
+        </Alert>
+      )}
+      {targets.map((target, index) => (
+        <Box
+          key={index}
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1.4fr" },
+            gap: 2,
+            mb: 2,
+            pb: 2,
+            borderBottom: "1px solid",
+            borderColor: "divider",
+          }}
+        >
+          <TextField
+            label="이름"
+            placeholder="Ptium"
+            value={target.name}
+            onChange={(e) => update(index, { name: e.target.value })}
+          />
+          <TextField
+            label="주소 (오리진)"
+            placeholder="https://ptium.intra"
+            value={target.origin}
+            onChange={(e) => update(index, { origin: e.target.value })}
+            helperText="스킴과 호스트(포트)까지만. 경로는 적지 않습니다."
+          />
+          <Box
+            sx={{
+              gridColumn: "1/-1",
+              display: "flex",
+              gap: 1,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              받는 형식
+            </Typography>
+            {HANDOFF_FORMATS.map((format) => {
+              const on = target.formats.includes(format);
+              return (
+                <Chip
+                  key={format}
+                  label={format}
+                  clickable
+                  variant={on ? "filled" : "outlined"}
+                  color={on ? "primary" : "default"}
+                  aria-pressed={on}
+                  onClick={() =>
+                    update(index, {
+                      formats: on
+                        ? target.formats.filter((f) => f !== format)
+                        : [...target.formats, format],
+                    })
+                  }
+                />
+              );
+            })}
+            <Button
+              color="error"
+              size="small"
+              sx={{ ml: "auto" }}
+              onClick={() =>
+                changed({ targets: targets.filter((_, i) => i !== index) })
+              }
+            >
+              삭제
+            </Button>
+          </Box>
+          {!target.formats.includes("markdown") && (
+            <Alert severity="warning" sx={{ gridColumn: "1/-1" }}>
+              Orbit은 markdown만 보내므로 이 서비스는 보내기 목록에 오르지
+              않습니다.
+            </Alert>
+          )}
+        </Box>
+      ))}
+      <Box sx={{ display: "flex", gap: 1.5, mt: 1 }}>
+        <Button
+          variant="outlined"
+          startIcon={<AddRoundedIcon />}
+          disabled={targets.length >= 20}
+          onClick={() =>
+            changed({
+              targets: [
+                ...targets,
+                { name: "", origin: "", formats: ["markdown"] },
+              ],
+            })
+          }
+        >
+          서비스 추가
+        </Button>
+        <Button
+          variant="contained"
+          startIcon={<SaveRoundedIcon />}
+          onClick={save}
+        >
+          목록 저장
+        </Button>
+      </Box>
     </Panel>
   );
 }

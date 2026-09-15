@@ -44,6 +44,6 @@ func internalError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, r.Context().Err()) {
 		return
 	}
-	slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	slog.Error("request failed", "method", r.Method, "path", loggedPath(r.URL.Path), "error", err)
 	writeError(w, http.StatusInternalServerError, "internal_error", "요청을 처리하지 못했습니다.")
 }

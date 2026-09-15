@@ -51,6 +51,15 @@ func (s *Server) getAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result["security"] = policy
+	var handoff HandoffSettings
+	if err := s.readSetting(r.Context(), "system", "handoff", &handoff, nil); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		internalError(w, r, err)
+		return
+	}
+	if handoff.Targets == nil {
+		handoff.Targets = []HandoffTarget{}
+	}
+	result["handoff"] = handoff
 	writeJSON(w, 200, map[string]any{"settings": result})
 }
 
@@ -162,6 +171,16 @@ func (s *Server) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.saveSetting(w, r, u, "security", "key_policy", v, "")
+	case "handoff":
+		var v HandoffSettings
+		if !decodeJSON(w, r, &v) {
+			return
+		}
+		if err := validateHandoffSettings(&v); err != nil {
+			writeError(w, 400, "validation_error", err.Error())
+			return
+		}
+		s.saveSetting(w, r, u, "system", "handoff", v, "")
 	default:
 		writeError(w, 404, "not_found", "설정 영역을 찾을 수 없습니다.")
 	}

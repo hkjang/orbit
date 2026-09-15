@@ -179,6 +179,10 @@ func requiredScope(method, path string) string {
 		}
 		return "memories:write"
 	}
+	// 표를 발급하는 것은 기억을 읽어 내주는 일이다. 쓰는 권한은 필요 없다.
+	if strings.HasPrefix(path, "/api/v1/handoff/") {
+		return "memories:read"
+	}
 	if strings.HasPrefix(path, "/api/v1/orbit") || strings.HasPrefix(path, "/api/v1/rediscover") {
 		return "orbit:read"
 	}
