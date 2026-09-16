@@ -5,6 +5,7 @@ describe("auditLabel", () => {
   it("names the actions we know about", () => {
     expect(auditLabel("key.rotate")).toBe("키 회전");
     expect(auditLabel("person_link.upsert")).toBe("관계 연결 추가·수정");
+    expect(auditLabel("auth.login_blocked")).toBe("로그인 잠금");
   });
 
   it("shows an unknown action as-is instead of hiding it", () => {

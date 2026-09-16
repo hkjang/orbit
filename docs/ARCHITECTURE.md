@@ -28,6 +28,13 @@ AI API keys are encrypted with the master encryption key. Contact fields,
 interaction summaries and memory content are encrypted using versioned,
 per-user data encryption keys. User keys are wrapped by the master key.
 
+Local password login is throttled in memory: ten failures for the same
+username from the same client address within 15 minutes lock that pair for
+15 minutes (`429 too_many_attempts` with `Retry-After`). The key combines
+username and address so a stranger cannot lock a real account by guessing its
+name, and neighbours behind one proxy do not lock each other. The moment a lock
+starts is written to the audit log as `auth.login_blocked`.
+
 Key rotation is transactional: Orbit creates a new data key, re-encrypts all
 current protected fields and retires the old key in one database transaction.
 

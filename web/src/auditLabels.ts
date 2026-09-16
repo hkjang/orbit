@@ -11,6 +11,7 @@ export const AUDIT_LABELS: Record<string, string> = {
   "approval.approved": "요청 승인",
   "approval.rejected": "요청 반려",
   "auth.login": "로그인",
+  "auth.login_blocked": "로그인 잠금",
   "data.export": "내 기록 내보내기",
   "interaction.create": "교류 기록",
   "key.rotate": "키 회전",
