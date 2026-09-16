@@ -89,7 +89,7 @@ go build -o orbit ./cmd/orbit
 - 📗 **[관계 수명주기 실무 매뉴얼 (PDF)](docs/Orbit_CRU_Operations_Manual.pdf)**: Create · Read · Update 단계별 실무 가이드 및 엔터프라이즈 팀 승인 거버넌스
 - 📙 **[시스템 아키텍처 & MCP 백서 (PDF)](docs/Orbit_Architecture_and_API_Whitepaper.pdf)**: Go 모듈형 모놀리스, 봉투 암호화, 무중단 키 회전 및 Dual-Era Streamable MCP 사양서
 - 🌐 **[인터랙티브 웹 홍보 페이지 (GitHub Pages)](docs/index.html)**: 60fps 앰비언트 테마, 3분 데모 비디오 및 15종 스크린샷 갤러리
-- 📖 [마크다운 사용자 가이드 (Markdown)](docs/guide.md) · [실무 매뉴얼](docs/cru-manual.md) · [시스템 아키텍처](docs/ARCHITECTURE.md) · [REST & MCP](docs/API.md) · [오프라인 배포](docs/OFFLINE.md)
+- 📖 [마크다운 사용자 가이드 (Markdown)](docs/guide.md) · [실무 매뉴얼](docs/cru-manual.md) · [시스템 아키텍처](docs/ARCHITECTURE.md) · [REST & MCP](docs/API.md) · [관리자 가이드](docs/ADMIN_GUIDE.md) · [오프라인 배포](docs/OFFLINE.md)
 
 ---
 

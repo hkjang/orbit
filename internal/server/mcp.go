@@ -291,5 +291,8 @@ func (s *Server) mcpCreateMemory(r *http.Request, u User, personID, title, conte
 		return nil, err
 	}
 	s.audit(r.Context(), u.ID, "memory.create", "memory", memoryID, r.RemoteAddr, map[string]any{"source": "mcp", "status": status})
+	if approval {
+		s.notifyApprovalRequested(r.Context(), u, memoryID, title, "MCP에서 생성", settings)
+	}
 	return map[string]any{"id": memoryID, "status": status, "approval_required": approval}, nil
 }

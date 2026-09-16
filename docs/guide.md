@@ -76,3 +76,4 @@ flowchart TD
 ### 2.9 서비스 관리 콘솔 (`/admin`)
 ![관리자 설정](images/14_admin_service_console.png)
 - 서비스 기본 정보, Keycloak OIDC SSO Discovery, AI 모델 및 토큰 한도(최대 256K), RBAC 권한 정책
+- 사내 SMTP 릴레이로 보내는 메일 알림(검토 요청·검토 결과·계정 준비)과 시험 발송, 발송 기록. 설정 표는 [관리자 가이드](ADMIN_GUIDE.md#메일-알림-smtp)

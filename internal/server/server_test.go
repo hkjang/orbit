@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/hkjang/orbit/internal/mail"
 )
 
 func TestExtractDelta(t *testing.T) {
@@ -114,4 +117,37 @@ func TestLinkKindsCoverStoredValues(t *testing.T) {
 	if len(linkKinds) != 5 {
 		t.Fatalf("linkKinds has %d entries, schema allows 5", len(linkKinds))
 	}
+}
+
+func TestMailSettingsViewNeverReturnsPassword(t *testing.T) {
+	settings := mail.DefaultSettings()
+	settings.SMTPHost, settings.Password, settings.ClearPassword = "relay.internal", "hunter2", true
+	raw, err := json.Marshal(mailSettingsView(settings, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if strings.Contains(body, "hunter2") || strings.Contains(body, `"password"`) || strings.Contains(body, "clear_password") {
+		t.Fatalf("settings view must not carry the password: %s", body)
+	}
+	if !strings.Contains(body, `"has_password":true`) || !strings.Contains(body, `"smtp_host":"relay.internal"`) {
+		t.Fatalf("settings view must say the password is set and keep the rest: %s", body)
+	}
+}
+
+func TestMailRoutesAreSessionOnly(t *testing.T) {
+	for _, path := range []string{"/api/v1/admin/mail/deliveries", "/api/v1/admin/mail/test"} {
+		if got := requiredScope(http.MethodPost, path); got != "session-only" {
+			t.Errorf("%s: API keys must not reach mail administration, got %q", path, got)
+		}
+	}
+}
+
+func TestMailNotifiersTolerateMissingService(t *testing.T) {
+	// 테스트와 일부 구성에서는 메일 서비스가 없다. 알림 자리는 요청을 깨뜨리지
+	// 않아야 한다.
+	s := &Server{}
+	s.notifyAccountCreated(context.Background(), User{ID: "a"}, User{ID: "b", Email: "b@example.internal"})
+	s.notifyApprovalDecided(context.Background(), User{ID: "a"}, "b", "m", "approved", "")
+	s.notifyApprovalRequested(context.Background(), User{ID: "a"}, "m", "제목", "", ApprovalSettings{ReviewerRole: "team_lead"})
 }

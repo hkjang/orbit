@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hkjang/orbit/internal/id"
+	"github.com/hkjang/orbit/internal/mail"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -51,6 +52,13 @@ func (s *Server) getAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result["security"] = policy
+	mailSettings := mail.DefaultSettings()
+	var mailPassword string
+	if err := s.readSetting(r.Context(), "mail", "smtp", &mailSettings, &mailPassword); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	result["mail"] = mailSettingsView(mailSettings, mailPassword != "")
 	writeJSON(w, 200, map[string]any{"settings": result})
 }
 
@@ -162,6 +170,22 @@ func (s *Server) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.saveSetting(w, r, u, "security", "key_policy", v, "")
+	case "mail":
+		v := mail.DefaultSettings()
+		if !decodeJSON(w, r, &v) {
+			return
+		}
+		if err := v.Normalize(); err != nil {
+			writeError(w, 400, "validation_error", strings.TrimPrefix(err.Error(), mail.ErrInvalid.Error()+": "))
+			return
+		}
+		// 비밀번호는 저장 값에 싣지 않고 encrypted_value 에 따로 둔다. 응답과
+		// 로그 어디에도 되읽히지 않는다.
+		secret := v.Password
+		clearSecret := v.ClearPassword
+		v.Password = ""
+		v.ClearPassword = false
+		s.saveSetting(w, r, u, "mail", "smtp", v, secret, clearSecret)
 	default:
 		writeError(w, 404, "not_found", "설정 영역을 찾을 수 없습니다.")
 	}
@@ -291,6 +315,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r.Context(), actor.ID, "user.create", "user", u.ID, r.RemoteAddr, map[string]string{"role": u.Role})
+	s.notifyAccountCreated(r.Context(), actor, u)
 	writeJSON(w, 201, map[string]string{"id": u.ID})
 }
 

@@ -28,6 +28,10 @@ import { api, formatDate } from "../api";
 import { auditLabel } from "../auditLabels";
 import { useAuth } from "../AuthContext";
 import { PageHeader } from "../components/PageHeader";
+import {
+  MailNotificationsPanel,
+  type MailSettingsView,
+} from "../components/MailNotificationsPanel";
 import { ErrorView, LoadingView } from "../components/StateViews";
 import type { User } from "../types";
 
@@ -70,12 +74,14 @@ interface AdminSettings {
     allow_user_rotation: boolean;
     default_scopes: string[];
   };
+  mail: MailSettingsView;
 }
 const tabs = [
   "일반",
   "Keycloak SSO",
   "AI",
   "승인 프로세스",
+  "메일 알림",
   "사용자",
   "키 권한",
   "감사 로그",
@@ -157,8 +163,14 @@ export function AdminPage() {
           changed={(v) => setSettings({ ...settings, workflow: v })}
         />
       ) : tab === 4 ? (
-        <UsersPanel />
+        <MailNotificationsPanel
+          value={settings.mail}
+          changed={(v) => setSettings({ ...settings, mail: v })}
+          reload={load}
+        />
       ) : tab === 5 ? (
+        <UsersPanel />
+      ) : tab === 6 ? (
         <SecurityPanel
           value={settings.security}
           changed={(v) => setSettings({ ...settings, security: v })}

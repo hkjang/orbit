@@ -12,12 +12,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/hkjang/orbit/internal/mail"
 	"github.com/hkjang/orbit/internal/store"
 	"github.com/hkjang/orbit/internal/webui"
 )
 
 type Server struct {
 	store   *store.Store
+	mail    *mail.Service
 	version string
 	commit  string
 	builtAt string
@@ -25,6 +27,7 @@ type Server struct {
 
 func New(st *store.Store, version, commit, builtAt string) http.Handler {
 	s := &Server{store: st, version: version, commit: commit, builtAt: builtAt}
+	s.mail = mail.NewService(mail.NewPostgresLog(st.DB), s.mailConfig, s.lookupEmails)
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer, s.securityHeaders)
 	r.Use(middleware.Timeout(11 * time.Minute))
@@ -79,6 +82,8 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 			a.Get("/audit", s.listAudit)
 			a.Get("/key-permissions", s.listKeyPermissions)
 			a.Put("/key-permissions/{permissionID}", s.updateKeyPermission)
+			a.Get("/mail/deliveries", s.adminMailDeliveries)
+			a.Post("/mail/test", s.adminSendTestMail)
 		})
 	})
 	r.Handle("/mcp", s.authenticate(http.HandlerFunc(s.mcp)))

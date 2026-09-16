@@ -23,3 +23,8 @@ data scope required by each tool:
 
 Memory creation through REST or MCP enters `pending` only when the administrator
 has enabled the approval workflow. Otherwise the review process is omitted.
+When mail notifications are enabled, a pending memory also mails the reviewers
+in the background; the request never waits on the relay. Mail administration
+(`/admin/settings/mail`, `/admin/mail/test`, `/admin/mail/deliveries`) is
+session-only and not reachable with an API key — see the
+[administrator guide](ADMIN_GUIDE.md#메일-알림-smtp).

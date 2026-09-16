@@ -15,6 +15,7 @@ export const AUDIT_LABELS: Record<string, string> = {
   "interaction.create": "교류 기록",
   "key.rotate": "키 회전",
   "key_permission.update": "키 권한 변경",
+  "mail.test": "메일 시험 발송",
   "memory.create": "기억 생성",
   "person.create": "인물 등록",
   "person.delete": "인물 삭제",

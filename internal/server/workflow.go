@@ -124,6 +124,9 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r.Context(), u.ID, "memory.create", "memory", memoryID, r.RemoteAddr, map[string]any{"status": status})
+	if requiresApproval {
+		s.notifyApprovalRequested(r.Context(), u, memoryID, in.Title, in.RequestNote, workflow)
+	}
 	writeJSON(w, 201, map[string]any{"id": memoryID, "status": status, "approval_required": requiresApproval})
 }
 
@@ -326,8 +329,8 @@ func (s *Server) reviewApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	var resourceType, resourceID, status string
-	err = tx.QueryRow(r.Context(), `SELECT resource_type,resource_id,status FROM approval_requests WHERE id=$1 FOR UPDATE`, approvalID).Scan(&resourceType, &resourceID, &status)
+	var resourceType, resourceID, status, requesterID string
+	err = tx.QueryRow(r.Context(), `SELECT resource_type,resource_id,status,requester_id FROM approval_requests WHERE id=$1 FOR UPDATE`, approvalID).Scan(&resourceType, &resourceID, &status, &requesterID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, 404, "not_found", "검토 요청을 찾을 수 없습니다.")
 		return
@@ -355,5 +358,8 @@ func (s *Server) reviewApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r.Context(), u.ID, "approval."+in.Decision, "approval", approvalID, r.RemoteAddr, map[string]string{"resource_id": resourceID})
+	if resourceType == "memory" {
+		s.notifyApprovalDecided(r.Context(), u, requesterID, resourceID, in.Decision, in.Note)
+	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

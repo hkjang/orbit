@@ -142,6 +142,7 @@ func (s *Store) Bootstrap(ctx context.Context, username, password string) error 
 		{"ai", "provider", `{"enabled":false,"provider":"openai-compatible","base_url":"","model":"","max_output_tokens":8192,"request_timeout_seconds":120,"system_prompt":"답변은 제공된 관계 기록에 근거하고, 모르는 내용은 추측하지 마세요."}`},
 		{"workflow", "approval", `{"enabled":false,"resource_types":["memory"],"reviewer_role":"team_lead"}`},
 		{"security", "key_policy", `{"rotation_days":90,"allow_user_rotation":true,"default_scopes":["people:read","memories:read"]}`},
+		{"mail", "smtp", `{"enabled":false,"smtp_host":"","smtp_port":25,"security":"auto","skip_tls_verify":false,"username":"","from_address":"","from_name":"Orbit","base_url":"","timeout_seconds":10,"notify_approval_request":true,"notify_approval_decided":true,"notify_account_created":true}`},
 	}
 	for _, d := range defaults {
 		if _, err = tx.Exec(ctx, `INSERT INTO settings(namespace,key,value,updated_by) VALUES($1,$2,$3::jsonb,$4) ON CONFLICT DO NOTHING`, d.ns, d.key, d.value, userID); err != nil {
