@@ -21,10 +21,11 @@ type Server struct {
 	version string
 	commit  string
 	builtAt string
+	logins  *loginThrottle
 }
 
 func New(st *store.Store, version, commit, builtAt string) http.Handler {
-	s := &Server{store: st, version: version, commit: commit, builtAt: builtAt}
+	s := &Server{store: st, version: version, commit: commit, builtAt: builtAt, logins: newLoginThrottle()}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.Recoverer, s.securityHeaders)
 	r.Use(middleware.Timeout(11 * time.Minute))

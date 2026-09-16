@@ -38,6 +38,7 @@ flowchart TD
 ![로그인 화면](images/01_login_page.png)
 - **로컬 Bootstrap 관리자** 및 **Keycloak OIDC Discovery/PKCE SSO** 완벽 지원
 - 다크 엠비언트 테마의 미려한 우주 그래픽과 브랜드 매니페스토 제공
+- **로그인 잠금**: 같은 아이디를 같은 주소에서 15분 안에 10번 틀리면 15분 동안 로그인이 막힙니다(`429`, 남은 시간을 안내). 잠긴 순간은 감사 로그에 "로그인 잠금"으로 남으며, 서비스를 재시작하면 잠금이 풀립니다.
 
 ### 2.2 나의 Orbit 우주 캔버스 (`/orbit`)
 ![Orbit 캔버스](images/09_orbit_canvas_populated.png)

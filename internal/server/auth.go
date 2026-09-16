@@ -42,6 +42,12 @@ func (s *Server) localLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
+	// 같은 아이디를 같은 주소에서 거듭 틀리면 DB에 묻기 전에 돌려보낸다.
+	key := loginKey(body.Username, r.RemoteAddr)
+	if wait, ok := s.logins.blocked(key, time.Now()); ok {
+		writeLoginBlocked(w, wait)
+		return
+	}
 	var u User
 	var passwordHash string
 	err := s.store.DB.QueryRow(r.Context(), `SELECT id,username,email,display_name,role,status,password_hash,created_at FROM users WHERE lower(username)=lower($1)`, strings.TrimSpace(body.Username)).Scan(&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.Role, &u.Status, &passwordHash, &u.CreatedAt)
@@ -51,9 +57,15 @@ func (s *Server) localLogin(w http.ResponseWriter, r *http.Request) {
 		if err != nil || passwordHash == "" {
 			_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$7EqJtq98hPqEX7fNZaFWoO5gJH.j8N2z3QeXGgfZgD4dO6tA0nL0m"), []byte(body.Password))
 		}
+		if s.logins.fail(key, time.Now()) {
+			// 문이 닫히는 순간만 남긴다. 실패 하나하나를 적으면 감사 로그가
+			// 공격자의 시도로 채워진다. 아이디는 실제 계정인지와 무관하게 적는다.
+			s.audit(r.Context(), "", "auth.login_blocked", "session", "", r.RemoteAddr, map[string]any{"username": strings.TrimSpace(body.Username), "minutes": int(loginLockout.Minutes())})
+		}
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "아이디 또는 비밀번호를 확인해 주세요.")
 		return
 	}
+	s.logins.reset(key)
 	if err := s.issueSession(w, r, u.ID); err != nil {
 		internalError(w, r, err)
 		return
