@@ -234,16 +234,25 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "oidc_unavailable", "SSO가 설정되지 않았습니다.")
 		return
 	}
+	s.beginOIDC(w, r, settings, redirectURL)
+}
+
+// beginOIDC는 설정을 읽은 뒤의 시작 흐름이다. 설정 읽기와 떼어 둔 것은 제공자가
+// 죽었을 때의 답을 DB 없이 검사하기 위해서다.
+func (s *Server) beginOIDC(w http.ResponseWriter, r *http.Request, settings OIDCSettings, redirectURL string) {
+	// 조용한 시도인지와 돌아갈 자리는 콜백이 알아야 하므로 state와 함께 봉인해
+	// 쿠키에 싣는다. 브라우저가 고칠 수 없는 자리다.
+	silent := silentOIDCRequested(settings, r.URL.Query())
 	provider, err := oidc.NewProvider(r.Context(), settings.IssuerURL)
 	if err != nil {
-		internalError(w, r, fmt.Errorf("OIDC discovery: %w", err))
+		// 조용한 시도는 화면이 열릴 때마다 스스로 시작한다. 여기서 JSON을 내면
+		// 제공자가 잠시 죽은 동안 로그인하지 않은 모든 방문자가 로그인 폼 대신
+		// 오류 페이지를 보고 아이디/비밀번호 로그인에 닿지 못한다.
+		oidcFailure(w, r, silent, 500, "internal_error", "", fmt.Errorf("OIDC discovery: %w", err))
 		return
 	}
 	state := id.Token(24)
 	nonce := id.Token(24)
-	// 조용한 시도인지와 돌아갈 자리는 콜백이 알아야 하므로 state와 함께 봉인해
-	// 쿠키에 싣는다. 브라우저가 고칠 수 없는 자리다.
-	silent := silentOIDCRequested(settings, r.URL.Query())
 	returnTo := r.URL.Query().Get("return_to")
 	if !safeReturnTo(returnTo) {
 		returnTo = ""
@@ -255,7 +264,7 @@ func (s *Server) oidcStart(w http.ResponseWriter, r *http.Request) {
 	payload, _ := json.Marshal(stateData)
 	sealed, err := s.store.Vault.EncryptSystem(string(payload), "oidc-state")
 	if err != nil {
-		internalError(w, r, err)
+		oidcFailure(w, r, silent, 500, "internal_error", "", err)
 		return
 	}
 	secureCookie := r.TLS != nil || strings.HasPrefix(strings.ToLower(strings.TrimSpace(redirectURL)), "https://")
@@ -297,6 +306,27 @@ func oidcRefusalTarget(silent bool) string {
 	return "/login?sso=error"
 }
 
+// oidcFailure는 SSO 흐름이 도중에 실패했을 때 답하는 자리다. 사람이 버튼을 눌러
+// 시작한 흐름은 API처럼 JSON 오류로 답하지만, 화면이 스스로 시작한 조용한 시도는
+// 아무 것도 누르지 않은 사람을 원문 JSON에 떨어뜨리지 않도록 로그인 화면으로
+// 돌려보낸다. 표시가 sso=error이므로 화면은 다시 시도하지 않고 오류 안내와
+// 아이디/비밀번호 로그인을 보여 준다. 500은 internalError를 거쳐 기록이 남는다.
+func oidcFailure(w http.ResponseWriter, r *http.Request, silent bool, status int, code, message string, err error) {
+	if !silent {
+		if status == http.StatusInternalServerError {
+			internalError(w, r, err)
+			return
+		}
+		writeError(w, status, code, message)
+		return
+	}
+	if err != nil && errors.Is(err, r.Context().Err()) {
+		return
+	}
+	slog.Warn("silent SSO failed", "code", code, "error", err)
+	http.Redirect(w, r, "/login?sso=error", http.StatusFound)
+}
+
 // oidcState는 시작 때 봉인해 둔 쿠키를 풀어 콜백의 state와 맞춰 본다.
 func (s *Server) oidcState(r *http.Request) (map[string]string, error) {
 	cookie, err := r.Cookie("orbit_oidc_state")
@@ -333,24 +363,33 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	settings, redirectURL, err := s.oidcConfig(r.Context())
 	if err != nil {
-		internalError(w, r, err)
+		oidcFailure(w, r, stateData["silent"] == "true", 500, "internal_error", "", err)
 		return
 	}
+	s.completeOIDC(w, r, settings, redirectURL, stateData)
+}
+
+// completeOIDC는 state가 맞고 설정을 읽은 뒤의 콜백 흐름이다. 여기서 나는 실패는
+// 모두 oidcFailure를 거친다 — 조용한 시도에서는 어느 것이든 JSON이 아니라
+// 로그인 화면이어야 하기 때문이다(미등록·비활성 사용자가 새 탭을 열 때마다
+// 원문 JSON을 보게 되는 자리다).
+func (s *Server) completeOIDC(w http.ResponseWriter, r *http.Request, settings OIDCSettings, redirectURL string, stateData map[string]string) {
+	silent := stateData["silent"] == "true"
 	provider, err := oidc.NewProvider(r.Context(), settings.IssuerURL)
 	if err != nil {
-		internalError(w, r, err)
+		oidcFailure(w, r, silent, 500, "internal_error", "", fmt.Errorf("OIDC discovery: %w", err))
 		return
 	}
 	conf := oauth2.Config{ClientID: settings.ClientID, ClientSecret: settings.ClientSecret, Endpoint: provider.Endpoint(), RedirectURL: redirectURL, Scopes: []string{oidc.ScopeOpenID, "profile", "email"}}
 	token, err := conf.Exchange(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
-		writeError(w, 401, "oidc_exchange_failed", "SSO 인증을 완료하지 못했습니다.")
+		oidcFailure(w, r, silent, 401, "oidc_exchange_failed", "SSO 인증을 완료하지 못했습니다.", err)
 		return
 	}
 	rawID, _ := token.Extra("id_token").(string)
 	idToken, err := provider.Verifier(&oidc.Config{ClientID: settings.ClientID}).Verify(r.Context(), rawID)
 	if err != nil {
-		writeError(w, 401, "invalid_id_token", "SSO 토큰을 확인하지 못했습니다.")
+		oidcFailure(w, r, silent, 401, "invalid_id_token", "SSO 토큰을 확인하지 못했습니다.", err)
 		return
 	}
 	var claims struct {
@@ -362,28 +401,28 @@ func (s *Server) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		Nonce             string `json:"nonce"`
 	}
 	if idToken.Claims(&claims) != nil || claims.Subject == "" || claims.Nonce != stateData["nonce"] {
-		writeError(w, 401, "invalid_id_token", "SSO 사용자 정보를 확인하지 못했습니다.")
+		oidcFailure(w, r, silent, 401, "invalid_id_token", "SSO 사용자 정보를 확인하지 못했습니다.", nil)
 		return
 	}
 	u, err := s.findOrProvisionOIDCUser(r.Context(), settings, claims.Subject, claims.Email, claims.EmailVerified, claims.PreferredUsername, claims.Name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, 403, "provisioning_disabled", "관리자에게 사용자 등록을 요청해 주세요.")
+			oidcFailure(w, r, silent, 403, "provisioning_disabled", "관리자에게 사용자 등록을 요청해 주세요.", nil)
 			return
 		}
-		internalError(w, r, err)
+		oidcFailure(w, r, silent, 500, "internal_error", "", err)
 		return
 	}
 	if u.Status != "active" {
-		writeError(w, 403, "account_disabled", "비활성화된 사용자입니다.")
+		oidcFailure(w, r, silent, 403, "account_disabled", "비활성화된 사용자입니다.", nil)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: "orbit_oidc_state", Value: "", Path: "/api/v1/auth/oidc/callback", HttpOnly: true, Secure: strings.HasPrefix(strings.ToLower(strings.TrimSpace(redirectURL)), "https://"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	if err = s.issueSession(w, r, u.ID); err != nil {
-		internalError(w, r, err)
+		oidcFailure(w, r, silent, 500, "internal_error", "", err)
 		return
 	}
-	s.audit(r.Context(), u.ID, "auth.login", "session", "", r.RemoteAddr, map[string]any{"method": "oidc", "silent": stateData["silent"] == "true"})
+	s.audit(r.Context(), u.ID, "auth.login", "session", "", r.RemoteAddr, map[string]any{"method": "oidc", "silent": silent})
 	// 깊은 링크로 들어온 사람은 로그인한 뒤 그 자리로 돌아간다.
 	target := "/orbit"
 	if returnTo := stateData["return_to"]; safeReturnTo(returnTo) {

@@ -110,3 +110,102 @@ func TestOIDCCallbackRejectsBadStateWithoutProviderError(t *testing.T) {
 		t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// fakeOIDCProvider는 Discovery 문서만 답하고 토큰 교환은 거절하는 제공자다.
+// 콜백이 코드 교환 실패를 어떻게 답하는지 보는 데 쓴다.
+func fakeOIDCProvider(t *testing.T) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			writeJSON(w, 200, map[string]any{
+				"issuer":                 srv.URL,
+				"authorization_endpoint": srv.URL + "/auth",
+				"token_endpoint":         srv.URL + "/token",
+				"jwks_uri":               srv.URL + "/keys",
+			})
+		case "/token":
+			writeJSON(w, 400, map[string]any{"error": "invalid_grant"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// 조용한 시도는 사람이 아무 것도 누르지 않은 흐름이다. 그 시작이 Discovery
+// 실패를 만나면 JSON 500이 아니라 로그인 화면으로 돌려보내야 아이디/비밀번호
+// 로그인에 닿을 수 있다. 사람이 버튼을 눌러 시작한 흐름은 그대로 오류를 낸다.
+func TestOIDCStartDiscoveryFailure(t *testing.T) {
+	s := testOIDCServer(t)
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	settings := OIDCSettings{Enabled: true, AutoLogin: true, IssuerURL: dead.URL, ClientID: "orbit", ClientSecret: "x"}
+
+	silent := httptest.NewRecorder()
+	s.beginOIDC(silent, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/start?prompt=none&return_to=%2Fpeople", nil), settings, "http://orbit.example/api/v1/auth/oidc/callback")
+	if silent.Code != http.StatusFound || silent.Header().Get("Location") != "/login?sso=error" {
+		t.Fatalf("silent start on discovery failure: status %d location %q, want 302 to /login?sso=error: %s", silent.Code, silent.Header().Get("Location"), silent.Body.String())
+	}
+
+	plain := httptest.NewRecorder()
+	s.beginOIDC(plain, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/start", nil), settings, "http://orbit.example/api/v1/auth/oidc/callback")
+	if plain.Code != http.StatusInternalServerError {
+		t.Fatalf("plain start on discovery failure: status %d, want 500", plain.Code)
+	}
+}
+
+// 콜백에서 코드 교환이 실패했을 때도 같다: 조용한 시도는 로그인 화면으로,
+// 사람이 시작한 흐름은 401 JSON으로.
+func TestOIDCCallbackExchangeFailure(t *testing.T) {
+	s := testOIDCServer(t)
+	provider := fakeOIDCProvider(t)
+	settings := OIDCSettings{Enabled: true, AutoLogin: true, IssuerURL: provider.URL, ClientID: "orbit", ClientSecret: "x"}
+	redirectURL := "http://orbit.example/api/v1/auth/oidc/callback"
+
+	silent := httptest.NewRecorder()
+	s.completeOIDC(silent, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=abc&state=s1", nil), settings, redirectURL, map[string]string{"state": "s1", "silent": "true"})
+	if silent.Code != http.StatusFound || silent.Header().Get("Location") != "/login?sso=error" {
+		t.Fatalf("silent callback on exchange failure: status %d location %q, want 302 to /login?sso=error: %s", silent.Code, silent.Header().Get("Location"), silent.Body.String())
+	}
+
+	plain := httptest.NewRecorder()
+	s.completeOIDC(plain, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=abc&state=s1", nil), settings, redirectURL, map[string]string{"state": "s1"})
+	if plain.Code != http.StatusUnauthorized {
+		t.Fatalf("plain callback on exchange failure: status %d, want 401: %s", plain.Code, plain.Body.String())
+	}
+}
+
+// 콜백에서 Discovery가 실패하면 — 시작과 콜백 사이에 제공자가 죽은 경우 —
+// 조용한 시도는 역시 로그인 화면으로 간다.
+func TestOIDCCallbackDiscoveryFailure(t *testing.T) {
+	s := testOIDCServer(t)
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	settings := OIDCSettings{Enabled: true, AutoLogin: true, IssuerURL: dead.URL, ClientID: "orbit", ClientSecret: "x"}
+	rec := httptest.NewRecorder()
+	s.completeOIDC(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=abc&state=s1", nil), settings, "http://orbit.example/api/v1/auth/oidc/callback", map[string]string{"state": "s1", "silent": "true"})
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login?sso=error" {
+		t.Fatalf("status %d location %q, want 302 to /login?sso=error", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+// 사용자 단계의 거절(미등록·비활성)도 조용한 시도에서는 JSON이 아니라 로그인
+// 화면이다. 커밋이 약속한 "로그인하지 않은 브라우저에서는 로그인 화면이 뜬다"가
+// 이 경우에도 지켜져야 한다.
+func TestOIDCFailureAnswersSilentFlowWithRedirect(t *testing.T) {
+	for _, code := range []string{"provisioning_disabled", "account_disabled", "invalid_id_token"} {
+		rec := httptest.NewRecorder()
+		oidcFailure(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback", nil), true, 403, code, "x", nil)
+		if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login?sso=error" {
+			t.Fatalf("%s silent: status %d location %q, want 302 to /login?sso=error", code, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	rec := httptest.NewRecorder()
+	oidcFailure(rec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback", nil), false, 403, "account_disabled", "x", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("plain: status %d, want 403", rec.Code)
+	}
+}
