@@ -1,6 +1,7 @@
 package server
 
 import (
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -151,6 +152,26 @@ func TestAttachmentDisposition(t *testing.T) {
 	}
 	if got := attachmentDisposition(`we"ird.md`); strings.Contains(got, `"we"ird`) {
 		t.Fatalf("quote leaked into ascii name: %q", got)
+	}
+	// 보내는 쪽에서 만든 헤더를 받는 쪽 파서로 되돌려 본다. '=', '@', ';' 같은
+	// 글자는 RFC 5987 attr-char 가 아니라서 그대로 두면 파서가 헤더 전체를 거부한다.
+	for _, name := range []string{
+		"a=b @c.md",
+		"회의; 정리=요약 @팀:공유.md",
+		"first meeting.md",
+		"a+b&c$d!e#f.md",
+	} {
+		got := attachmentDisposition(name)
+		disp, params, err := mime.ParseMediaType(got)
+		if err != nil {
+			t.Fatalf("attachmentDisposition(%q) = %q: not parseable: %v", name, got, err)
+		}
+		if disp != "attachment" {
+			t.Fatalf("attachmentDisposition(%q): disposition %q", name, disp)
+		}
+		if params["filename"] != name {
+			t.Fatalf("attachmentDisposition(%q) round-tripped to %q (header %q)", name, params["filename"], got)
+		}
 	}
 }
 

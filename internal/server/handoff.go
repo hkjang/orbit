@@ -347,7 +347,42 @@ func attachmentDisposition(filename string) string {
 	if strings.TrimSuffix(strings.TrimSpace(ascii), ".md") == "" {
 		ascii = "orbit-memory.md"
 	}
-	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, ascii, url.PathEscape(filename))
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, ascii, rfc5987Escape(filename))
+}
+
+// rfc5987Escape 는 filename* 값을 RFC 5987 attr-char 만 남기고 나머지 바이트를
+// %XX 로 바꾼다. url.PathEscape 는 '=', '@', ':' 같은 글자를 그대로 두는데,
+// 이 글자들은 attr-char 가 아니라 받는 쪽 파서(mime.ParseMediaType)가
+// Content-Disposition 전체를 거부해 filename 까지 잃는다.
+func rfc5987Escape(v string) string {
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	b.Grow(len(v) * 3)
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if isRFC5987AttrChar(c) {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&0x0f])
+	}
+	return b.String()
+}
+
+// isRFC5987AttrChar: ALPHA / DIGIT / "!" / "#" / "$" / "&" / "+" / "-" / "." /
+// "^" / "_" / "`" / "|" / "~"
+func isRFC5987AttrChar(c byte) bool {
+	switch {
+	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		return true
+	}
+	switch c {
+	case '!', '#', '$', '&', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	}
+	return false
 }
 
 // oneLine 은 줄바꿈을 공백 하나로 접는다. 제목 한 줄이 두 줄이 되면 마크다운
