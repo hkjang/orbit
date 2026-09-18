@@ -70,7 +70,28 @@ interface AdminSettings {
     allow_user_rotation: boolean;
     default_scopes: string[];
   };
+  mcp: {
+    oauth: {
+      enabled: boolean;
+      resource: string;
+      audience: string[];
+      scopes: string[];
+    };
+    resource_url: string;
+    metadata_url: string;
+    issuer_url: string;
+    usable: boolean;
+    unusable_reason: string;
+  };
 }
+const mcpOAuthScopes = [
+  ["people:read", "관계 조회"],
+  ["people:write", "관계 변경"],
+  ["memories:read", "기억 조회"],
+  ["memories:write", "기억 생성"],
+  ["orbit:read", "Orbit 조회"],
+  ["ai:invoke", "AI 호출"],
+];
 const tabs = [
   "일반",
   "Keycloak SSO",
@@ -142,10 +163,18 @@ export function AdminPage() {
           changed={(v) => setSettings({ ...settings, system: v })}
         />
       ) : tab === 1 ? (
-        <OIDCSettings
-          value={settings.auth}
-          changed={(v) => setSettings({ ...settings, auth: v })}
-        />
+        <>
+          <OIDCSettings
+            value={settings.auth}
+            changed={(v) => setSettings({ ...settings, auth: v })}
+          />
+          <Box sx={{ mt: 3 }}>
+            <MCPOAuthSettings
+              value={settings.mcp}
+              changed={(v) => setSettings({ ...settings, mcp: v })}
+            />
+          </Box>
+        </>
       ) : tab === 2 ? (
         <AISettingsPanel
           value={settings.ai}
@@ -376,6 +405,131 @@ function OIDCSettings({
         sx={{ mt: 3 }}
       >
         OIDC 저장
+      </Button>
+    </Panel>
+  );
+}
+
+// MCP 를 개인 키 없이 Keycloak 액세스 토큰으로 여는 카드. 저장되는 값은 넷
+// (enabled·resource·audience·scopes)이고, 리소스 식별자와 메타데이터 주소는
+// 서버가 계산해 내려주는 복사용 값이다.
+function MCPOAuthSettings({
+  value,
+  changed,
+}: {
+  value: AdminSettings["mcp"];
+  changed: (v: AdminSettings["mcp"]) => void;
+}) {
+  const v = value.oauth;
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [audienceText, setAudienceText] = useState(v.audience.join(" "));
+  const update = (patch: Partial<typeof v>) =>
+    changed({ ...value, oauth: { ...v, ...patch } });
+  const save = async () => {
+    setError("");
+    try {
+      await api("/admin/settings/mcp", {
+        method: "PUT",
+        body: JSON.stringify({ ...v, audience: audienceText.split(/\s+/) }),
+      });
+      setMessage("MCP SSO(OAuth) 설정을 저장했습니다.");
+    } catch (e) {
+      setMessage("");
+      setError(e instanceof Error ? e.message : "저장하지 못했습니다.");
+    }
+  };
+  const toggleScope = (scope: string, on: boolean) =>
+    update({
+      scopes: on
+        ? [...v.scopes.filter((s) => s !== scope), scope]
+        : v.scopes.filter((s) => s !== scope),
+    });
+  return (
+    <Panel
+      title="MCP SSO(OAuth) 연결"
+      description="개인 키 대신 Keycloak 액세스 토큰으로 /mcp 에 들어오게 합니다. 위의 Issuer URL 을 그대로 쓰며, 계정은 만들지 않고 웹으로 먼저 로그인한 사용자만 통과합니다."
+    >
+      <SaveNotice message={message} />
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={v.enabled}
+            onChange={(e) => update({ enabled: e.target.checked })}
+          />
+        }
+        label="MCP 에서 SSO 액세스 토큰 받기"
+      />
+      {v.enabled && !value.usable && (
+        <Alert severity="warning" sx={{ mt: 1 }}>
+          켜져 있지만 아직 쓸 수 없습니다: {value.unusable_reason}
+        </Alert>
+      )}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+          gap: 2,
+          mt: 2,
+        }}
+      >
+        <TextField
+          sx={{ gridColumn: "1/-1" }}
+          label="리소스 식별자 (mcp.oauth.resource)"
+          placeholder={value.resource_url || "https://orbit.example.com/mcp"}
+          value={v.resource}
+          onChange={(e) => update({ resource: e.target.value })}
+          helperText="비워 두면 일반 설정의 서비스 공개 URL + /mcp 를 씁니다. Keycloak Audience 매퍼에 넣는 값이기도 합니다."
+        />
+        <TextField
+          sx={{ gridColumn: "1/-1" }}
+          label="허용 대상 (mcp.oauth.audience)"
+          placeholder="claude-mcp cursor-mcp"
+          value={audienceText}
+          onChange={(e) => setAudienceText(e.target.value)}
+          helperText="공백으로 구분한 Keycloak 클라이언트 ID. 토큰의 aud 또는 azp 가 이 가운데 하나이거나 리소스 식별자를 가리켜야 합니다."
+        />
+        <Box sx={{ gridColumn: "1/-1" }}>
+          <Typography variant="body2" color="text.secondary">
+            SSO 주체에게 주는 권한 범위 (mcp.oauth.scopes) — 토큰이 무엇을
+            주장하든 이 범위를 넘지 않습니다.
+          </Typography>
+          {mcpOAuthScopes.map(([scope, label]) => (
+            <FormControlLabel
+              key={scope}
+              control={
+                <Checkbox
+                  checked={v.scopes.includes(scope)}
+                  onChange={(e) => toggleScope(scope, e.target.checked)}
+                />
+              }
+              label={`${label} (${scope})`}
+            />
+          ))}
+        </Box>
+      </Box>
+      <Alert severity="info" sx={{ mt: 2 }}>
+        MCP URL:{" "}
+        <strong>{value.resource_url || "(서비스 공개 URL 필요)"}</strong>
+        <br />
+        메타데이터 URL:{" "}
+        <strong>{value.metadata_url || "(서비스 공개 URL 필요)"}</strong>
+        <br />
+        인증 서버(issuer):{" "}
+        <strong>{value.issuer_url || "(OIDC 미설정)"}</strong>
+      </Alert>
+      <Button
+        variant="contained"
+        startIcon={<SaveRoundedIcon />}
+        onClick={save}
+        sx={{ mt: 3 }}
+      >
+        MCP SSO 저장
       </Button>
     </Panel>
   );

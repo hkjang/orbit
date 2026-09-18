@@ -77,3 +77,4 @@ flowchart TD
 ### 2.9 서비스 관리 콘솔 (`/admin`)
 ![관리자 설정](images/14_admin_service_console.png)
 - 서비스 기본 정보, Keycloak OIDC SSO Discovery, AI 모델 및 토큰 한도(최대 256K), RBAC 권한 정책
+- MCP 를 개인 키 없이 Keycloak 액세스 토큰으로 열기(기본 꺼짐). 설정 표와 Keycloak 구성은 [관리자 가이드](ADMIN_GUIDE.md#mcp-ssooauth--개인-키-없이-keycloak-토큰으로-mcp-열기)

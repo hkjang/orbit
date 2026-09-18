@@ -15,6 +15,7 @@ export interface PublicConfig {
   commit: string;
   built_at: string;
   oidc: { enabled: boolean; display_name: string };
+  mcp_oauth?: { enabled: boolean };
 }
 
 export interface Person {
