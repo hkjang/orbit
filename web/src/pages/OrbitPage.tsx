@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   Chip,
-  Slider,
   Typography,
 } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
@@ -16,8 +15,10 @@ import { api, formatDate } from "../api";
 import { useAuth } from "../AuthContext";
 import { OrbitCanvas } from "../components/OrbitCanvas";
 import { EmptyView, ErrorView, LoadingView } from "../components/StateViews";
+import { TimeTravel } from "../components/TimeTravel";
 import { describeEclipse, findEclipses } from "../eclipse";
 import { STATE_META, STATE_ORDER } from "../orbitGrammar";
+import { createLatestGuard } from "../timeTravel";
 import type { OrbitLink, OrbitNode } from "../types";
 
 export function OrbitPage() {
@@ -40,7 +41,11 @@ export function OrbitPage() {
     occurred_at?: string;
   } | null>();
   const [error, setError] = useState("");
+  // 시점을 바꾸며 요청이 겹칠 때 먼저 보낸 응답이 늦게 와 화면을 덮지 않게
+  // 순번을 매기고, 최신 요청의 응답만 화면에 반영한다.
+  const requests = useRef(createLatestGuard());
   const load = useCallback(async () => {
+    const token = requests.current.next();
     setError("");
     try {
       const [orbit, discovery] = await Promise.all([
@@ -53,6 +58,7 @@ export function OrbitPage() {
         }>(travelTo ? `/orbit?at=${encodeURIComponent(travelTo)}` : "/orbit"),
         api<{ item: typeof rediscover }>("/rediscover"),
       ]);
+      if (!requests.current.isCurrent(token)) return;
       setNodes(orbit.nodes);
       setContexts(orbit.contexts);
       setLinks(orbit.links ?? []);
@@ -61,6 +67,7 @@ export function OrbitPage() {
       if (orbit.earliest_at) setEarliest(orbit.earliest_at);
       setRediscover(discovery.item);
     } catch (e) {
+      if (!requests.current.isCurrent(token)) return;
       setError(e instanceof Error ? e.message : "우주를 불러오지 못했습니다.");
     }
   }, [travelTo]);
@@ -319,85 +326,6 @@ function EclipseCard({
             {focused ? "전체 우주 보기" : "지도에서 보기"}
           </Button>
         </Box>
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
- * 과거의 우주로 옮겨 가는 슬라이더.
- *
- * 되살아나는 것은 교류가 만든 거리와 흐름이다. 중요도·소속·고정 여부는
- * 사용자가 직접 정하는 값이라 변경 이력이 없어 오늘의 값을 쓴다. 그 사실을
- * 화면에서도 숨기지 않는다.
- */
-function TimeTravel({
-  earliest,
-  value,
-  onChange,
-}: {
-  earliest: string;
-  value?: string;
-  onChange: (value?: string) => void;
-}) {
-  const start = new Date(earliest).getTime();
-  const end = Date.now();
-  const current = value ? new Date(value).getTime() : end;
-  const days = Math.max(1, Math.round((end - start) / 86_400_000));
-  const dayOf = (time: number) => Math.round((time - start) / 86_400_000);
-  return (
-    <Card sx={{ mb: 2.5 }}>
-      <CardContent sx={{ py: "16px!important" }}>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 2,
-            flexWrap: "wrap",
-          }}
-        >
-          <Box sx={{ minWidth: 160 }}>
-            <Typography
-              variant="overline"
-              color="primary.light"
-              sx={{ letterSpacing: ".13em" }}
-            >
-              TIME TRAVEL
-            </Typography>
-            <Typography sx={{ fontWeight: 720 }}>
-              {value ? formatDate(value) : "지금의 우주"}
-            </Typography>
-          </Box>
-          <Slider
-            value={dayOf(current)}
-            min={0}
-            max={days}
-            step={1}
-            aria-label="돌아볼 시점"
-            valueLabelDisplay="auto"
-            valueLabelFormat={(day) =>
-              formatDate(new Date(start + day * 86_400_000).toISOString())
-            }
-            onChange={(_, day) => {
-              const at = new Date(start + (day as number) * 86_400_000);
-              onChange(
-                dayOf(at.getTime()) >= days ? undefined : at.toISOString(),
-              );
-            }}
-            sx={{ flex: "1 1 240px", mx: 1 }}
-          />
-          {value && (
-            <Button size="small" onClick={() => onChange(undefined)}>
-              현재로
-            </Button>
-          )}
-        </Box>
-        {value && (
-          <Typography variant="caption" color="text.secondary">
-            그날의 거리와 흐름을 교류 기록에서 다시 계산했습니다.
-            중요도·소속·고정은 변경 이력이 없어 오늘의 값을 씁니다.
-          </Typography>
-        )}
       </CardContent>
     </Card>
   );
