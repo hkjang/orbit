@@ -9,10 +9,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hkjang/orbit/internal/id"
 	"github.com/hkjang/orbit/internal/secure"
 	"github.com/hkjang/orbit/internal/store"
@@ -297,6 +300,98 @@ func TestDBTokenForAnotherAppIsRefusedUntilAudienceIsListed(t *testing.T) {
 		if w := s.do(http.MethodPost, "/mcp", bad, listTools); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s accepted: %d", name, w.Code)
 		}
+	}
+}
+
+// guards: authenticate — 거부된 토큰마다 운영자용 로그 한 줄이 남고, 그 줄에는
+// 검증 라이브러리의 원문 오류와 이 요청의 request_id 가 있다. 클라이언트가 본 401
+// 과 서버 로그를 잇는 것은 그 id 뿐이다. 프로덕션 라우터(New, RequestID 미들웨어
+// 포함)를 그대로 지난다.
+func TestDBRefusedTokenIsLoggedWithCauseAndRequestID(t *testing.T) {
+	s := newDBServer(t)
+	idp := newIDP(t)
+	other := newIDP(t)
+	s.useIDP(idp, readOnly)
+	s.createUser("ssomember", "subject-mcp", "active")
+	logs := captureLogs(t)
+
+	cases := map[string]struct {
+		token  string
+		reason string
+		cause  string // 검증 라이브러리·검사 코드가 낸 원문
+	}{
+		"expired":      {idp.sign(t, accessToken(t, idp, testResource, map[string]any{"exp": time.Now().Add(-time.Minute).Unix()})), "token rejected", "oidc: token is expired"},
+		"other issuer": {other.sign(t, accessToken(t, other, testResource, nil)), "token rejected", "failed to verify signature"},
+		"issuer claim": {idp.sign(t, accessToken(t, other, testResource, nil)), "token rejected", "oidc: id token issued by a different provider"},
+		"HS256":        {idp.signHS(t, accessToken(t, idp, testResource, nil)), "token rejected", `unexpected signature algorithm \"HS256\"`},
+		"audience":     {idp.sign(t, accessToken(t, idp, "account", map[string]any{"azp": "claude-mcp"})), "audience not accepted", `aud=[account] azp=\"claude-mcp\"`},
+		"ID token":     {idp.sign(t, accessToken(t, idp, testResource, map[string]any{"typ": "ID"})), "token type not access", `typ=\"ID\"`},
+		"unknown user": {idp.sign(t, accessToken(t, idp, testResource, map[string]any{"sub": "nobody", "email": "nobody@example.test"})), "no account for subject", "no account for subject"},
+	}
+	for name, tc := range cases {
+		logs.Reset()
+		requestID := "req-" + strings.ReplaceAll(name, " ", "-")
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(listTools))
+		r.Host = "orbit.example.test"
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Bearer "+tc.token)
+		r.Header.Set(middleware.RequestIDHeader, requestID)
+		w := httptest.NewRecorder()
+		s.handler.ServeHTTP(w, r)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d %s", name, w.Code, w.Body.String())
+			continue
+		}
+		line := logs.String()
+		if strings.Count(line, "mcp oauth token refused") != 1 {
+			t.Errorf("%s: want exactly one refusal line, got:\n%s", name, line)
+			continue
+		}
+		for _, want := range []string{`msg="mcp oauth token refused"`, "reason=" + strconv.Quote(tc.reason), tc.cause, "request_id=" + requestID} {
+			if !strings.Contains(line, want) {
+				t.Errorf("%s: log line lacks %q:\n%s", name, want, line)
+			}
+		}
+	}
+	// 클라이언트가 id 를 보내지 않아도 미들웨어가 만든 id 가 붙는다.
+	logs.Reset()
+	if w := s.do(http.MethodPost, "/mcp", cases["expired"].token, listTools); w.Code != http.StatusUnauthorized {
+		t.Fatalf("expired without X-Request-Id: %d", w.Code)
+	}
+	if id := regexp.MustCompile(`request_id=(\S+)`).FindStringSubmatch(logs.String()); len(id) != 2 || id[1] == "" || id[1] == `""` {
+		t.Errorf("generated request_id missing from:\n%s", logs.String())
+	}
+	// 받아들인 토큰은 거부 줄을 남기지 않는다.
+	logs.Reset()
+	if w := s.do(http.MethodPost, "/mcp", idp.sign(t, accessToken(t, idp, testResource, nil)), listTools); w.Code != http.StatusOK {
+		t.Fatalf("good token: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(logs.String(), "mcp oauth token refused") {
+		t.Errorf("accepted token logged a refusal:\n%s", logs.String())
+	}
+}
+
+// guards: New — 관리자가 리소스 식별자에 다른 경로를 적어도 401 이 가리키는
+// 메타데이터 주소는 살아 있다.
+func TestDBMetadataFollowsCustomResourcePath(t *testing.T) {
+	s := newDBServer(t)
+	idp := newIDP(t)
+	custom := readOnly
+	custom.Resource = "https://orbit.example.test/orbit/mcp"
+	s.useIDP(idp, custom)
+
+	refusal := s.do(http.MethodPost, "/mcp", "", listTools)
+	header := refusal.Header().Get("WWW-Authenticate")
+	const metadata = "https://orbit.example.test/.well-known/oauth-protected-resource/orbit/mcp"
+	if !strings.Contains(header, `resource_metadata="`+metadata+`"`) {
+		t.Fatalf("401 header: %q", header)
+	}
+	w := s.do(http.MethodGet, "/.well-known/oauth-protected-resource/orbit/mcp", "", "")
+	var doc struct {
+		Resource string `json:"resource"`
+	}
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &doc) != nil || doc.Resource != custom.Resource {
+		t.Fatalf("metadata at the announced path: %d %s", w.Code, w.Body.String())
 	}
 }
 

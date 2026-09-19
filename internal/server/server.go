@@ -84,9 +84,12 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 		})
 	})
 	r.Handle("/mcp", s.authenticate(http.HandlerFunc(s.mcp)))
-	// RFC 9728: 거부된 MCP 클라이언트가 인증 서버를 찾는 문서. 두 경로 모두 인증 없음.
+	// RFC 9728: 거부된 MCP 클라이언트가 인증 서버를 찾는 문서. 인증 없음. 문서의
+	// 주소는 리소스 식별자의 경로를 따라가므로(기본 /mcp, 관리자가 적은 값이면 그
+	// 경로), 그 아래 어떤 경로든 같은 문서를 준다 — 401 이 가리킨 주소가 SPA 로
+	// 떨어지지 않게.
 	r.Get("/.well-known/oauth-protected-resource", s.protectedResourceMetadata)
-	r.Get("/.well-known/oauth-protected-resource/mcp", s.protectedResourceMetadata)
+	r.Get("/.well-known/oauth-protected-resource/*", s.protectedResourceMetadata)
 	r.Get("/openapi.json", s.openAPI)
 	r.Handle("/*", s.spa())
 	return r

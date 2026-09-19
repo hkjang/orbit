@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/hmac"
@@ -9,12 +10,18 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // MCP 를 개인 키 없이 Keycloak 토큰으로.
@@ -241,6 +248,197 @@ func TestVerifyMCPTokenWhenDiscoveryFails(t *testing.T) {
 	if refusal == nil || refusal.reason != "discovery failed" || refusal.err == nil || refusal.message == "" {
 		t.Fatalf("refusal %+v", refusal)
 	}
+}
+
+// gatedIDP 는 discovery 응답을 붙들어 둘 수 있는 발급자다. 응답 전에 gate 를
+// 기다리고, 몇 번 불렸는지 센다. 실패를 흉내낼 때는 status 를 바꾼다.
+type gatedIDP struct {
+	server *httptest.Server
+	gate   chan struct{}
+	hits   atomic.Int32
+	status atomic.Int32
+}
+
+func newGatedIDP(t *testing.T) *gatedIDP {
+	t.Helper()
+	idp := &gatedIDP{gate: make(chan struct{})}
+	idp.status.Store(http.StatusOK)
+	idp.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/openid-configuration" {
+			http.NotFound(w, r)
+			return
+		}
+		idp.hits.Add(1)
+		select {
+		case <-idp.gate:
+		case <-r.Context().Done():
+			return
+		}
+		if status := int(idp.status.Load()); status != http.StatusOK {
+			http.Error(w, "keycloak is down", status)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": idp.server.URL, "authorization_endpoint": idp.server.URL + "/authorize", "token_endpoint": idp.server.URL + "/token", "jwks_uri": idp.server.URL + "/jwks"})
+	}))
+	t.Cleanup(idp.server.Close)
+	return idp
+}
+
+// guards: oauthProvider — 같은 issuer 의 첫 요청들은 discovery 하나로 합쳐지고,
+// 그동안 다른 issuer(이미 캐시된 것)의 요청은 락에 걸리지 않는다.
+func TestOAuthProviderDiscoveryIsSharedAndDoesNotBlockOthers(t *testing.T) {
+	slow := newGatedIDP(t)
+	cached := newGatedIDP(t)
+	close(cached.gate)
+	s := &Server{}
+	if _, err := s.oauthProvider(context.Background(), cached.server.URL); err != nil {
+		t.Fatal(err)
+	}
+
+	const callers = 8
+	results := make(chan error, callers)
+	for range callers {
+		go func() {
+			_, err := s.oauthProvider(context.Background(), slow.server.URL)
+			results <- err
+		}()
+	}
+	// 느린 discovery 가 진행 중인 동안 캐시된 issuer 는 즉시 답해야 한다.
+	waitFor(t, func() bool { return slow.hits.Load() == 1 })
+	quick, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if _, err := s.oauthProvider(quick, cached.server.URL); err != nil {
+		t.Fatalf("cached issuer waited behind another issuer's discovery: %v", err)
+	}
+	// 그리고 합류한 요청은 discovery 를 더 부르지 않는다.
+	if hits := slow.hits.Load(); hits != 1 {
+		t.Fatalf("discovery called %d times before release", hits)
+	}
+	close(slow.gate)
+	for range callers {
+		if err := <-results; err != nil {
+			t.Errorf("joined caller: %v", err)
+		}
+	}
+	if hits := slow.hits.Load(); hits != 1 {
+		t.Errorf("discovery called %d times for %d concurrent callers", hits, callers)
+	}
+	if _, err := s.oauthProvider(context.Background(), slow.server.URL); err != nil || slow.hits.Load() != 1 {
+		t.Errorf("provider not cached after discovery: err=%v hits=%d", err, slow.hits.Load())
+	}
+}
+
+// guards: oauthProvider — 실패한 discovery 는 잠시 기억해 요청마다 죽은
+// Keycloak 을 두드리지 않고, 기억이 지나면 다시 시도한다.
+func TestOAuthProviderCachesDiscoveryFailureBriefly(t *testing.T) {
+	idp := newGatedIDP(t)
+	close(idp.gate)
+	idp.status.Store(http.StatusBadGateway)
+	s := &Server{}
+	_, first := s.oauthProvider(context.Background(), idp.server.URL)
+	if first == nil {
+		t.Fatal("discovery against a 502 must fail")
+	}
+	_, second := s.oauthProvider(context.Background(), idp.server.URL)
+	if second == nil || second.Error() != first.Error() {
+		t.Fatalf("second call did not reuse the cached failure: %v", second)
+	}
+	if hits := idp.hits.Load(); hits != 1 {
+		t.Fatalf("discovery retried %d times inside the failure window", hits)
+	}
+	// 기억이 지나고 Keycloak 이 살아나면 다음 요청이 다시 시도해 성공한다.
+	s.oauth.mu.Lock()
+	failure := s.oauth.failed[idp.server.URL]
+	failure.until = time.Now().Add(-time.Second)
+	s.oauth.failed[idp.server.URL] = failure
+	s.oauth.mu.Unlock()
+	idp.status.Store(http.StatusOK)
+	if _, err := s.oauthProvider(context.Background(), idp.server.URL); err != nil {
+		t.Fatalf("retry after the failure window: %v", err)
+	}
+	if hits := idp.hits.Load(); hits != 2 {
+		t.Fatalf("discovery called %d times, want 2", hits)
+	}
+}
+
+// guards: oauthProvider — 요청 컨텍스트가 discovery 를 끊는다(WithoutCancel 이
+// 아니다). 앞선 요청이 취소되어 실패한 것은 Keycloak 의 실패가 아니므로 기억하지
+// 않고, 기다리던 요청은 제 컨텍스트로 다시 시도한다.
+func TestOAuthProviderAbandonedDiscoveryIsNotCachedAndWaitersRetry(t *testing.T) {
+	idp := newGatedIDP(t)
+	s := &Server{}
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leader := make(chan error, 1)
+	go func() {
+		_, err := s.oauthProvider(leaderCtx, idp.server.URL)
+		leader <- err
+	}()
+	waitFor(t, func() bool { return idp.hits.Load() == 1 })
+	waiter := make(chan error, 1)
+	go func() {
+		_, err := s.oauthProvider(context.Background(), idp.server.URL)
+		waiter <- err
+	}()
+	waitFor(t, func() bool {
+		s.oauth.mu.Lock()
+		defer s.oauth.mu.Unlock()
+		return s.oauth.inflight[idp.server.URL] != nil
+	})
+	cancelLeader()
+	if err := <-leader; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled request must see its own cancellation, got %v", err)
+	}
+	// 기다리던 요청이 새 discovery 를 시작한다 — 취소된 것을 실패로 기억하지 않았다.
+	waitFor(t, func() bool { return idp.hits.Load() == 2 })
+	close(idp.gate)
+	if err := <-waiter; err != nil {
+		t.Fatalf("waiter after an abandoned discovery: %v", err)
+	}
+	s.oauth.mu.Lock()
+	_, remembered := s.oauth.failed[idp.server.URL]
+	s.oauth.mu.Unlock()
+	if remembered {
+		t.Error("a cancelled discovery was cached as a failure")
+	}
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met in time")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// guards: New — 401 과 관리 화면이 알리는 메타데이터 주소는 리소스 식별자의 경로를
+// 따라가므로, 라우터는 그 아래 어떤 경로든 SPA 가 아니라 메타데이터로 보내야 한다.
+func TestMetadataURLIsRoutedForAnyResourcePath(t *testing.T) {
+	router := New(nil, "test", "test", "test").(chi.Router)
+	for _, resource := range []string{"", testResource, "https://mcp.example.test/orbit/mcp", "https://mcp.example.test/"} {
+		o := mcpOAuth{MCPOAuthSettings: MCPOAuthSettings{Resource: resource}, PublicURL: "https://orbit.example.test"}
+		u, err := url.Parse(o.metadataURL())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rctx := chi.NewRouteContext()
+		if !router.Match(rctx, http.MethodGet, u.Path) || !strings.HasPrefix(rctx.RoutePattern(), "/.well-known/oauth-protected-resource") {
+			t.Errorf("resource %q: metadata path %s matched %q", resource, u.Path, rctx.RoutePattern())
+		}
+	}
+}
+
+// captureLogs 는 기본 slog 출력을 잠시 버퍼로 돌린다. 핸들러가 운영자에게 남기는
+// 줄을 그대로 단언하기 위한 것이다. 검사가 끝나면 원래 로거로 되돌린다.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &buf
 }
 
 // guards: oauthEffectiveScopes — 관리자 천장과 토큰 scope 의 교집합, 비면 거부.

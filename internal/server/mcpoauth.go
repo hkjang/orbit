@@ -184,13 +184,41 @@ func looksLikeJWT(token string) bool {
 // 왕복이고 그 뒤의 JWKS 가 모든 토큰을 검증하므로, 요청마다 하면 Keycloak 의
 // 지연이 MCP 호출 하나하나의 앞에 선다. go-oidc 는 모르는 kid 를 만나면 키
 // 집합을 다시 받아오므로 키 회전에 캐시를 비울 필요는 없다.
+//
+// mu 는 아래 세 맵의 조회·갱신만 지킨다. discovery 자체(Keycloak 왕복, 최대 10초)는
+// 락 밖에서 한다 — 안에서 하면 Keycloak 이 느릴 때 JWT 를 내민 모든 /mcp 요청이
+// 그 뒤에 줄을 선다. 같은 issuer 의 첫 요청들은 inflight 로 하나로 합치고, 실패는
+// oauthDiscoveryRetryAfter 동안 기억해 요청마다 죽은 Keycloak 을 두드리지 않는다.
 type oauthProviders struct {
 	mu       sync.Mutex
 	byIssuer map[string]*oidc.Provider
+	inflight map[string]*oauthDiscovery
+	failed   map[string]oauthDiscoveryFailure
 	// nextJWKSFetch 는 위조 토큰을 잇달아 내밀어 JWKS 를 매번 다시 받게 하는
 	// 것을 초당 한 번으로 묶는다. 캐시된 키로 검증되는 요청은 기다리지 않는다.
 	fetchMu       sync.Mutex
 	nextJWKSFetch time.Time
+}
+
+// oauthDiscoveryRetryAfter 는 실패한 discovery 를 기억하는 시간이다. Keycloak 이
+// 죽어 있는 동안 토큰 요청마다 10초짜리 시도를 다시 하지 않을 만큼 길고, 되살아난
+// 뒤 오래 막혀 있지 않을 만큼 짧다.
+const oauthDiscoveryRetryAfter = 15 * time.Second
+
+// oauthDiscovery 는 진행 중인 discovery 하나다. 먼저 온 요청이 하고 나머지는
+// done 을 기다린다.
+type oauthDiscovery struct {
+	done     chan struct{}
+	provider *oidc.Provider
+	err      error
+	// abandoned 는 앞선 요청이 discovery 도중 취소된 경우다. 그 실패는 Keycloak 의
+	// 것이 아니므로 기다리던 요청은 제 컨텍스트로 다시 시도한다.
+	abandoned bool
+}
+
+type oauthDiscoveryFailure struct {
+	err   error
+	until time.Time
 }
 
 // RoundTrip 은 discovery·JWKS 요청에 한계를 둔다: 리다이렉트 없음, 본문 1MiB,
@@ -231,23 +259,66 @@ func (p *oauthProviders) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func (s *Server) oauthProvider(ctx context.Context, issuer string) (*oidc.Provider, error) {
-	s.oauth.mu.Lock()
-	defer s.oauth.mu.Unlock()
-	if s.oauth.byIssuer == nil {
-		s.oauth.byIssuer = map[string]*oidc.Provider{}
+	for {
+		s.oauth.mu.Lock()
+		if provider := s.oauth.byIssuer[issuer]; provider != nil {
+			s.oauth.mu.Unlock()
+			return provider, nil
+		}
+		if failure, ok := s.oauth.failed[issuer]; ok && time.Now().Before(failure.until) {
+			s.oauth.mu.Unlock()
+			return nil, failure.err
+		}
+		flight, joined := s.oauth.inflight[issuer]
+		if !joined {
+			flight = &oauthDiscovery{done: make(chan struct{})}
+			if s.oauth.inflight == nil {
+				s.oauth.inflight = map[string]*oauthDiscovery{}
+			}
+			s.oauth.inflight[issuer] = flight
+		}
+		s.oauth.mu.Unlock()
+
+		if joined {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-flight.done:
+			}
+			if flight.abandoned && ctx.Err() == nil {
+				continue
+			}
+			return flight.provider, flight.err
+		}
+
+		flight.provider, flight.err = s.discoverOAuthProvider(ctx, issuer)
+		flight.abandoned = flight.err != nil && ctx.Err() != nil
+		s.oauth.mu.Lock()
+		delete(s.oauth.inflight, issuer)
+		switch {
+		case flight.err == nil:
+			if s.oauth.byIssuer == nil {
+				s.oauth.byIssuer = map[string]*oidc.Provider{}
+			}
+			s.oauth.byIssuer[issuer] = flight.provider
+		case !flight.abandoned:
+			if s.oauth.failed == nil {
+				s.oauth.failed = map[string]oauthDiscoveryFailure{}
+			}
+			s.oauth.failed[issuer] = oauthDiscoveryFailure{err: flight.err, until: time.Now().Add(oauthDiscoveryRetryAfter)}
+		}
+		s.oauth.mu.Unlock()
+		close(flight.done)
+		return flight.provider, flight.err
 	}
-	if provider := s.oauth.byIssuer[issuer]; provider != nil {
-		return provider, nil
-	}
+}
+
+// discoverOAuthProvider 는 Keycloak 왕복이다. 요청의 컨텍스트를 그대로 쓴다 —
+// go-oidc 는 나중의 JWKS 조회에 이 컨텍스트가 아니라 context.Background 와 여기서
+// 준 client 를 쓰므로(Provider.remoteKeySet), 요청이 끝나도 provider 는 멀쩡하다.
+func (s *Server) discoverOAuthProvider(ctx context.Context, issuer string) (*oidc.Provider, error) {
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &s.oauth, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	// discovery 는 이 요청보다 오래 살아야 한다. provider 가 나중의 키 조회에 이
-	// 컨텍스트를 계속 쓴다.
-	provider, err := oidc.NewProvider(oidc.ClientContext(context.WithoutCancel(ctx), client), issuer)
-	if err != nil {
-		return nil, err
-	}
-	s.oauth.byIssuer[issuer] = provider
-	return provider, nil
+	return oidc.NewProvider(oidc.ClientContext(ctx, client), issuer)
 }
 
 // oauthIdentity 는 검증을 통과한 토큰에서 계정을 찾는 데 쓰는 것만 남긴 것이다.

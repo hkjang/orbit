@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hkjang/orbit/internal/id"
 	"github.com/hkjang/orbit/internal/secure"
 	"github.com/jackc/pgx/v5"
@@ -135,7 +136,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			if isMCP && !strings.HasPrefix(bearer, "orb_") && looksLikeJWT(bearer) {
 				info.Kind = authOAuth
 				if o, cfgErr := s.mcpOAuthConfig(r.Context()); cfgErr != nil {
-					slog.Warn("mcp oauth settings unreadable", "error", cfgErr)
+					slog.Warn("mcp oauth settings unreadable", "request_id", middleware.GetReqID(r.Context()), "error", cfgErr)
 					err = cfgErr
 				} else {
 					oauth = &o
@@ -157,7 +158,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		if err != nil || u.Status != "active" {
 			if isMCP {
 				// MCP 의 401 은 길을 가리킨다. 토큰을 거부했으면 그 이유를 클라이언트에
-				// 말하고, 운영자를 위한 원인은 같은 자리에서 로그로 남긴다.
+				// 말하고, 운영자를 위한 원인은 같은 자리에서 로그로 남긴다. request_id 는
+				// 클라이언트가 본 401 과 이 줄을 잇는 열쇠다.
 				if oauth == nil {
 					if o, cfgErr := s.mcpOAuthConfig(r.Context()); cfgErr == nil {
 						oauth = &o
@@ -169,7 +171,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					}
 				}
 				if refusal != nil {
-					slog.Warn("mcp oauth token refused", "reason", refusal.reason, "error", refusal.err, "remote", r.RemoteAddr)
+					slog.Warn("mcp oauth token refused", "request_id", middleware.GetReqID(r.Context()), "reason", refusal.reason, "error", refusal.err, "remote", r.RemoteAddr)
 					writeError(w, http.StatusUnauthorized, "invalid_token", refusal.message)
 					return
 				}
