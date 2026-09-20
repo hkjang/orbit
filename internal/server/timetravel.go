@@ -135,9 +135,12 @@ func (s *Server) orbitAt(ctx context.Context, userID string, at time.Time) ([]ma
 
 // orbitRange는 시간 여행이 가능한 구간을 알려준다.
 // 시작점은 첫 기록이고, 그 이전에는 보여 줄 우주가 없다.
+//
+// 두 테이블을 따로 훑는다 — 조인하면 사람×교류 곱이 된다. 사람이 한 명도
+// 없으면 교류도 없으므로(interactions.person_id 가 people 을 참조) NULL 이다.
 func (s *Server) orbitRange(ctx context.Context, userID string) (*time.Time, error) {
 	var first *time.Time
-	err := s.store.DB.QueryRow(ctx, `SELECT least(min(p.created_at),min(i.occurred_at)) FROM people p LEFT JOIN interactions i ON i.user_id=p.user_id WHERE p.user_id=$1`, userID).Scan(&first)
+	err := s.store.DB.QueryRow(ctx, `SELECT least((SELECT min(created_at) FROM people WHERE user_id=$1),(SELECT min(occurred_at) FROM interactions WHERE user_id=$1))`, userID).Scan(&first)
 	return first, err
 }
 
