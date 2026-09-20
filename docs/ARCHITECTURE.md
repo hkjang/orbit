@@ -38,6 +38,13 @@ starts is written to the audit log as `auth.login_blocked`.
 Key rotation is transactional: Orbit creates a new data key, re-encrypts all
 current protected fields and retires the old key in one database transaction.
 
+## Tests
+
+`go test ./...` runs without a database. Tests that need real SQL (for
+example `internal/server/timetravel_db_test.go`) skip unless
+`ORBIT_TEST_DATABASE_URL` points at a PostgreSQL the test may migrate and
+write to; the file header shows a one-line `docker run` that provides one.
+
 ## Relationship visual grammar
 
 - Planet size: long-term importance
