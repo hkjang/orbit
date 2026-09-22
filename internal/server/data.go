@@ -399,28 +399,55 @@ type Interaction struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-func (s *Server) createInteraction(w http.ResponseWriter, r *http.Request) {
-	u := userFromContext(r.Context())
-	personID := chi.URLParam(r, "personID")
-	var in struct {
-		Kind       string    `json:"kind"`
-		OccurredAt time.Time `json:"occurred_at"`
-		Weight     float64   `json:"weight"`
-		Summary    string    `json:"summary"`
-	}
-	if !decodeJSON(w, r, &in) {
-		return
-	}
+type interactionInput struct {
+	Kind       string    `json:"kind"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Weight     float64   `json:"weight"`
+	Summary    string    `json:"summary"`
+}
+
+// interactionFutureSkew는 "아직 오지 않은 시각"으로 볼 때 봐주는 몫이다.
+// 브라우저나 API 호출자의 시계가 서버보다 조금 앞설 수 있으므로 그만큼은
+// 미래라도 받는다.
+const interactionFutureSkew = 5 * time.Minute
+
+// validateInteractionInput은 교류 한 건의 입력을 다듬고 검사한다.
+//
+// 미래 시각을 막는 이유: 같은 한 건을 읽는 경로가 셋인데 셋이 서로 다르게
+// 읽는다. relationshipMetrics는 지난 날수를 math.Max(0,days)로 눌러 오늘
+// 만난 것처럼 만점 가중치를 주고, recalculateRelationship은 max(occurred_at)
+// 을 그대로 써서 last_interaction_at을 미래로 박으며, 과거 궤도 조회는
+// occurred_at<=at 이라 그 기록을 아예 보지 못한다. 오타 한 번이 친밀도·흐름
+// ·마지막 접촉을 영구히 왜곡하므로 들어오는 자리에서 막는다.
+//
+// now를 인자로 받는 것은 테스트가 시계를 고정할 수 있게 하기 위함이다.
+// 과거 쪽 하한은 두지 않는다 — 오래전의 첫 만남을 적는 것은 정당하다.
+func validateInteractionInput(in *interactionInput, now time.Time) error {
 	validKinds := map[string]bool{"meeting": true, "call": true, "message": true, "note": true, "other": true}
 	if !validKinds[in.Kind] {
-		writeError(w, 400, "validation_error", "교류 유형을 확인해 주세요.")
-		return
+		return errors.New("교류 유형을 확인해 주세요.")
 	}
 	if in.OccurredAt.IsZero() {
-		in.OccurredAt = time.Now()
+		in.OccurredAt = now
+	} else if in.OccurredAt.After(now.Add(interactionFutureSkew)) {
+		return errors.New("교류 시각은 미래일 수 없습니다. 날짜와 시간을 확인해 주세요.")
 	}
 	if in.Weight <= 0 || in.Weight > 10 {
 		in.Weight = 1
+	}
+	return nil
+}
+
+func (s *Server) createInteraction(w http.ResponseWriter, r *http.Request) {
+	u := userFromContext(r.Context())
+	personID := chi.URLParam(r, "personID")
+	var in interactionInput
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if err := validateInteractionInput(&in, time.Now()); err != nil {
+		writeError(w, 400, "validation_error", err.Error())
+		return
 	}
 	var exists bool
 	if err := s.store.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM people WHERE id=$1 AND user_id=$2)`, personID, u.ID).Scan(&exists); err != nil || !exists {
