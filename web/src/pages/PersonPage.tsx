@@ -30,6 +30,7 @@ import { StateChip } from "../components/StateChip";
 import { daysUntilDarkOrbit, forecastAt } from "../forecast";
 import { readGrammar } from "../orbitGrammar";
 import { api, formatDate } from "../api";
+import { toDatetimeLocalValue } from "../datetimeLocal";
 import { ErrorView, LoadingView, EmptyView } from "../components/StateViews";
 import { PersonFormDialog } from "../components/PersonFormDialog";
 import type { Interaction, Memory, Person } from "../types";
@@ -432,7 +433,7 @@ function InteractionDialog({
 }) {
   const [kind, setKind] = useState("meeting");
   const [occurred, setOccurred] = useState(() =>
-    new Date().toISOString().slice(0, 16),
+    toDatetimeLocalValue(new Date()),
   );
   const [summary, setSummary] = useState("");
   const [error, setError] = useState("");
