@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1.7
 FROM node:24-alpine AS web-builder
 WORKDIR /src/web
+# 이미지 빌드는 npm 캐시가 늘 비어 있어 레지스트리 장애를 그대로 맞는다.
+# 릴리즈(태그 푸시 → docker build)가 여기서 죽지 않도록 재시도 래퍼로 설치한다.
+# 실행 비트에 기대지 않으려고 sh 로 부른다(Windows 체크아웃에서 모드가 죽는다).
+COPY scripts/npm-install.sh /usr/local/bin/npm-install.sh
 COPY web/package.json web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN sh /usr/local/bin/npm-install.sh
 COPY web/ ./
 RUN npm run build
 

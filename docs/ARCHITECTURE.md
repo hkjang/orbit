@@ -45,6 +45,17 @@ example `internal/server/timetravel_db_test.go`) skip unless
 `ORBIT_TEST_DATABASE_URL` points at a PostgreSQL the test may migrate and
 write to; the file header shows a one-line `docker run` that provides one.
 
+## Web dependency install
+
+`scripts/npm-install.sh` wraps `npm ci` in a bounded retry (3 attempts) and is
+what the Dockerfile and `make web` call. npm's own `fetch-retries` cannot cover
+a registry socket drop that happens while the response body is being read —
+that error is thrown outside make-fetch-happen's retry wrapper — so the command
+itself has to be re-run. The wrapper never falls back to `npm install`, so the
+lockfile still decides the dependency tree, and a genuine failure still fails
+after the attempt limit. `scripts/npm_install_test.go` pins this down by putting
+a fake `npm` on `PATH`.
+
 ## Relationship visual grammar
 
 - Planet size: long-term importance
