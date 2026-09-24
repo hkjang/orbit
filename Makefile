@@ -13,7 +13,7 @@ test:
 	cd web && npm run test -- --run
 
 web:
-	cd web && npm ci && npm run build
+	cd web && sh ../scripts/npm-install.sh && npm run build
 	rm -rf internal/webui/dist
 	cp -R web/dist internal/webui/dist
 
