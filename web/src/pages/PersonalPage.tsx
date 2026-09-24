@@ -26,6 +26,7 @@ import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { api, formatDate } from "../api";
+import { useAuth } from "../AuthContext";
 import { PageHeader } from "../components/PageHeader";
 import { LoadingView } from "../components/StateViews";
 
@@ -363,6 +364,7 @@ function EncryptionPanel() {
 }
 
 function APIKeyPanel() {
+  const { config } = useAuth();
   const [keys, setKeys] = useState<APIKey[]>();
   const [open, setOpen] = useState(false);
   const [created, setCreated] = useState("");
@@ -505,6 +507,16 @@ function APIKeyPanel() {
               Authorization 헤더에 `mcp:use` 권한이 있는 API 키를 Bearer
               토큰으로 전달하세요.
             </Typography>
+            {config?.mcp_oauth?.enabled && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                <strong>키 없이 SSO 로 연결</strong>
+                <br />
+                MCP 클라이언트(Claude, Cursor 등)에 위 URL 하나만 넣으면
+                Keycloak 로그인 창이 열리고 토큰을 스스로 받아 옵니다. 이 화면에
+                한 번 로그인한 계정이면 되고, 권한은 관리자가 정한 읽기 범위를
+                따릅니다.
+              </Alert>
+            )}
             <Button
               component="a"
               href="/openapi.json"

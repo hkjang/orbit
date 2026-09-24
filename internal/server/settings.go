@@ -51,6 +51,15 @@ func (s *Server) getAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result["security"] = policy
+	mcpOAuth, err := s.mcpOAuthConfig(r.Context())
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
+	// 연결에 필요한 값(리소스 식별자, 메타데이터 주소)은 화면이 복사해 쓸 수 있게
+	// 계산해서 내려준다. 저장되는 값은 oauth 안의 넷뿐이다.
+	usable, unusableReason := mcpOAuth.usable()
+	result["mcp"] = map[string]any{"oauth": mcpOAuth.MCPOAuthSettings, "resource_url": mcpOAuth.resource(), "metadata_url": mcpOAuth.metadataURL(), "issuer_url": mcpOAuth.Issuer, "usable": usable, "unusable_reason": unusableReason}
 	writeJSON(w, 200, map[string]any{"settings": result})
 }
 
@@ -162,6 +171,31 @@ func (s *Server) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.saveSetting(w, r, u, "security", "key_policy", v, "")
+	case "mcp":
+		var v MCPOAuthSettings
+		if !decodeJSON(w, r, &v) {
+			return
+		}
+		v, err := normalizeMCPOAuthSettings(v)
+		if err != nil {
+			writeError(w, 400, "validation_error", err.Error())
+			return
+		}
+		if v.Enabled {
+			// 켜는 조건을 저장 시점에 거른다. 켜 두고 조용히 꺼진 채로 두는 것보다
+			// 여기서 거부하는 편이 운영자에게 낫다.
+			current, err := s.mcpOAuthConfig(r.Context())
+			if err != nil {
+				internalError(w, r, err)
+				return
+			}
+			current.MCPOAuthSettings = v
+			if ok, why := current.usable(); !ok {
+				writeError(w, 400, "validation_error", "MCP SSO 를 켜려면 Keycloak Issuer URL 과 리소스 식별자(또는 서비스 공개 URL)가 있어야 합니다: "+why)
+				return
+			}
+		}
+		s.saveSetting(w, r, u, "mcp", "oauth", v, "")
 	default:
 		writeError(w, 404, "not_found", "설정 영역을 찾을 수 없습니다.")
 	}
@@ -394,6 +428,47 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"audit_logs": items, "actions": actions})
+}
+
+// normalizeMCPOAuthSettings 는 관리자가 적은 값을 다듬고 거른다. 허용 대상은
+// 클라이언트 ID 나 URL 이므로 공백·따옴표를 품을 수 없고, 범위는 이 앱의 어휘여야
+// 하며, 리소스 식별자는 HTTP(S) URL 이어야 한다.
+func normalizeMCPOAuthSettings(v MCPOAuthSettings) (MCPOAuthSettings, error) {
+	v.Resource = strings.TrimSpace(v.Resource)
+	if v.Resource != "" && validateURL(v.Resource) != nil {
+		return v, errors.New("리소스 식별자는 HTTP(S) URL 이어야 합니다.")
+	}
+	audience := []string{}
+	for _, raw := range v.Audience {
+		for _, a := range strings.Fields(raw) {
+			if len(a) > 256 || strings.ContainsAny(a, "\"'<>") {
+				return v, errors.New("허용 대상을 확인해 주세요.")
+			}
+			if !contains(audience, a) {
+				audience = append(audience, a)
+			}
+		}
+	}
+	if len(audience) > 50 {
+		return v, errors.New("허용 대상은 50개까지 적을 수 있습니다.")
+	}
+	v.Audience = audience
+	scopes := []string{}
+	for _, raw := range v.Scopes {
+		for _, scope := range strings.Fields(raw) {
+			if !validScope(scope) {
+				return v, errors.New("SSO 주체에게 줄 권한 범위를 확인해 주세요.")
+			}
+			if !contains(scopes, scope) {
+				scopes = append(scopes, scope)
+			}
+		}
+	}
+	v.Scopes = scopes
+	if v.Enabled && len(mcpOAuth{MCPOAuthSettings: v}.scopeCeiling()) == 0 {
+		return v, errors.New("MCP SSO 를 켜려면 SSO 주체에게 줄 권한 범위를 하나 이상 골라야 합니다.")
+	}
+	return v, nil
 }
 
 func validScope(scope string) bool {

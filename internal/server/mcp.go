@@ -130,7 +130,7 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 	u := userFromContext(r.Context())
 	requiredScopes := map[string]string{"orbit_search_people": "people:read", "orbit_get_relationship": "people:read", "orbit_list_memories": "memories:read", "orbit_create_memory": "memories:write"}
 	if scope := requiredScopes[call.Name]; scope != "" && !requestHasScope(r, scope) {
-		s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": "이 MCP 도구에 필요한 API 키 권한이 없습니다: " + scope}}}, nil)
+		s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": "이 MCP 도구에 필요한 권한 범위가 없습니다: " + scope}}}, nil)
 		return
 	}
 	var result any
@@ -233,9 +233,11 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 	s.rpcWrite(w, req.ID, map[string]any{"content": []map[string]string{{"type": "text", "text": string(raw)}}, "structuredContent": result}, nil)
 }
 
+// requestHasScope 는 세션 사용자에게는 언제나 참이고, 키·SSO 토큰 주체에게는
+// 그 자격에 실린 범위만 본다.
 func requestHasScope(r *http.Request, scope string) bool {
 	info, _ := r.Context().Value(authContextKey).(authInfo)
-	return !info.APIKey || info.Scopes[scope]
+	return !info.external() || info.Scopes[scope]
 }
 
 func (s *Server) mcpCreateMemory(r *http.Request, u User, personID, title, content string, topics []string) (map[string]any, error) {

@@ -22,6 +22,7 @@ type Server struct {
 	commit  string
 	builtAt string
 	logins  *loginThrottle
+	oauth   oauthProviders
 }
 
 func New(st *store.Store, version, commit, builtAt string) http.Handler {
@@ -83,6 +84,12 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 		})
 	})
 	r.Handle("/mcp", s.authenticate(http.HandlerFunc(s.mcp)))
+	// RFC 9728: 거부된 MCP 클라이언트가 인증 서버를 찾는 문서. 인증 없음. 문서의
+	// 주소는 리소스 식별자의 경로를 따라가므로(기본 /mcp, 관리자가 적은 값이면 그
+	// 경로), 그 아래 어떤 경로든 같은 문서를 준다 — 401 이 가리킨 주소가 SPA 로
+	// 떨어지지 않게.
+	r.Get("/.well-known/oauth-protected-resource", s.protectedResourceMetadata)
+	r.Get("/.well-known/oauth-protected-resource/*", s.protectedResourceMetadata)
 	r.Get("/openapi.json", s.openAPI)
 	r.Handle("/*", s.spa())
 	return r
@@ -120,9 +127,16 @@ func (s *Server) publicConfig(w http.ResponseWriter, r *http.Request) {
 	if s.readSetting(r.Context(), "system", "general", &general, nil) == nil && general.ServiceName != "" {
 		serviceName = general.ServiceName
 	}
+	// 키 페이지가 "키 없이 SSO 로 연결" 안내를 보일지 정하는 데 쓴다. 켜져 있어도
+	// 쓸 수 없는 상태면 꺼진 것으로 알린다.
+	mcpOAuthEnabled := false
+	if o, err := s.mcpOAuthConfig(r.Context()); err == nil {
+		mcpOAuthEnabled, _ = o.usable()
+	}
 	writeJSON(w, 200, map[string]any{
 		"service_name": serviceName, "version": s.version, "commit": s.commit, "built_at": s.builtAt,
-		"oidc": map[string]any{"enabled": oidc.Enabled, "display_name": oidc.DisplayName},
+		"oidc":      map[string]any{"enabled": oidc.Enabled, "display_name": oidc.DisplayName},
+		"mcp_oauth": map[string]any{"enabled": mcpOAuthEnabled},
 	})
 }
 

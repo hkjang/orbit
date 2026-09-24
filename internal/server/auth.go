@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/hkjang/orbit/internal/id"
 	"github.com/hkjang/orbit/internal/secure"
 	"github.com/jackc/pgx/v5"
@@ -24,10 +26,25 @@ type contextKey string
 const userContextKey contextKey = "orbit-user"
 const authContextKey contextKey = "orbit-auth"
 
+// authKind 는 요청이 어떤 자격으로 들어왔는지다. 세션(브라우저)만 사람이 직접
+// 있는 자리이고, 키와 SSO 토큰은 바깥의 프로그램이다.
+type authKind string
+
+const (
+	authSession authKind = "session"
+	authAPIKey  authKind = "key"
+	authOAuth   authKind = "oauth"
+)
+
 type authInfo struct {
-	APIKey bool
+	Kind   authKind
 	Scopes map[string]bool
 }
+
+// external 은 범위 검사를 받아야 하는 주체인지다. 자격 종류를 모르는 값(빈 Kind)
+// 은 신뢰하는 쪽이 아니라 검사받는 쪽으로 둔다 — 새 주체 종류가 실수로 세션과
+// 같은 무제한 취급을 받지 않게.
+func (i authInfo) external() bool { return i.Kind != authSession }
 
 func userFromContext(ctx context.Context) User {
 	u, _ := ctx.Value(userContextKey).(User)
@@ -110,19 +127,59 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		var u User
 		info := authInfo{Scopes: map[string]bool{}}
 		var err error
+		// SSO 토큰은 MCP 경로에서만 본다. 다른 경로에서는 JWT 모양이어도 키
+		// 검사로 흘러가 지금과 같은 "잘못된 키" 로 끝난다.
+		var oauth *mcpOAuth
+		var refusal *oauthRefusal
+		isMCP := r.URL.Path == "/mcp"
 		if bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); bearer != "" {
-			u, info.Scopes, err = s.userByAPIKey(r.Context(), bearer)
-			info.APIKey = true
+			if isMCP && !strings.HasPrefix(bearer, "orb_") && looksLikeJWT(bearer) {
+				info.Kind = authOAuth
+				if o, cfgErr := s.mcpOAuthConfig(r.Context()); cfgErr != nil {
+					slog.Warn("mcp oauth settings unreadable", "request_id", middleware.GetReqID(r.Context()), "error", cfgErr)
+					err = cfgErr
+				} else {
+					oauth = &o
+					u, info.Scopes, refusal = s.oauthPrincipal(r.Context(), o, bearer)
+					if refusal != nil {
+						err = refusal.err
+					}
+				}
+			} else {
+				info.Kind = authAPIKey
+				u, info.Scopes, err = s.userByAPIKey(r.Context(), bearer)
+			}
 		} else if cookie, cookieErr := r.Cookie("orbit_session"); cookieErr == nil {
+			info.Kind = authSession
 			u, err = s.userBySession(r.Context(), cookie.Value)
 		} else {
 			err = errors.New("missing credentials")
 		}
 		if err != nil || u.Status != "active" {
+			if isMCP {
+				// MCP 의 401 은 길을 가리킨다. 토큰을 거부했으면 그 이유를 클라이언트에
+				// 말하고, 운영자를 위한 원인은 같은 자리에서 로그로 남긴다. request_id 는
+				// 클라이언트가 본 401 과 이 줄을 잇는 열쇠다.
+				if oauth == nil {
+					if o, cfgErr := s.mcpOAuthConfig(r.Context()); cfgErr == nil {
+						oauth = &o
+					}
+				}
+				if oauth != nil {
+					if header := wwwAuthenticate(*oauth, refusal); header != "" {
+						w.Header().Set("WWW-Authenticate", header)
+					}
+				}
+				if refusal != nil {
+					slog.Warn("mcp oauth token refused", "request_id", middleware.GetReqID(r.Context()), "reason", refusal.reason, "error", refusal.err, "remote", r.RemoteAddr)
+					writeError(w, http.StatusUnauthorized, "invalid_token", refusal.message)
+					return
+				}
+			}
 			writeError(w, http.StatusUnauthorized, "unauthorized", "로그인이 필요합니다.")
 			return
 		}
-		if info.APIKey {
+		if info.external() {
 			required := requiredScope(r.Method, r.URL.Path)
 			if required == "session-only" || (required != "" && !info.Scopes[required]) {
 				writeError(w, http.StatusForbidden, "insufficient_scope", "API 키의 권한 범위가 부족합니다.")
