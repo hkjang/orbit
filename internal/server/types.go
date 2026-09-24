@@ -22,6 +22,10 @@ type OIDCSettings struct {
 	DisplayName       string `json:"display_name"`
 	AutoProvision     bool   `json:"auto_provision"`
 	DefaultRole       string `json:"default_role"`
+	// AutoLogin은 제공자에 이미 세션이 있는 방문자를 로그인 화면 없이 들여보낸다
+	// (prompt=none). 기본값은 꺼짐이며, 꺼져 있으면 prompt=none 요청도 평범한
+	// 로그인으로 바뀐다.
+	AutoLogin bool `json:"auto_login"`
 }
 
 type AISettings struct {

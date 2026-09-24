@@ -43,6 +43,7 @@ interface AdminSettings {
       display_name: string;
       auto_provision: boolean;
       default_role: string;
+      auto_login: boolean;
     };
     has_client_secret: boolean;
   };
@@ -363,6 +364,16 @@ function OIDCSettings({
             />
           }
           label="첫 SSO 로그인 시 사용자를 자동 등록"
+        />
+        <FormControlLabel
+          sx={{ gridColumn: "1/-1" }}
+          control={
+            <Checkbox
+              checked={Boolean(v.auto_login)}
+              onChange={(e) => update({ auto_login: e.target.checked })}
+            />
+          }
+          label="Keycloak에 이미 로그인되어 있으면 로그인 화면 없이 자동 로그인"
         />
       </Box>
       <Alert severity="info" sx={{ mt: 2 }}>

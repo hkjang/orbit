@@ -23,6 +23,14 @@ export function LoginPage() {
   // 왜 로그인 화면에 와 있는지 알려준다. 갑자기 튕긴 것처럼 보이면
   // 사용자는 자기가 뭘 잘못했는지 찾게 된다.
   const expired = Boolean((location.state as { expired?: boolean })?.expired);
+  const from = (location.state as { from?: string })?.from;
+  // 콜백이 제공자 오류를 받으면 sso=error를 붙여 여기로 보낸다. sso=none은
+  // 조용한 시도가 평범하게 거절된 것이라 아무 말도 하지 않는다.
+  const ssoError = new URLSearchParams(location.search).get("sso") === "error";
+  const ssoStartHref =
+    from && from !== "/login"
+      ? `/api/v1/auth/oidc/start?return_to=${encodeURIComponent(from)}`
+      : "/api/v1/auth/oidc/start";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -33,7 +41,7 @@ export function LoginPage() {
     setBusy(true);
     try {
       await login(username, password);
-      navigate((location.state as { from?: string })?.from ?? "/");
+      navigate(from ?? "/");
     } catch (e) {
       setError(e instanceof Error ? e.message : "로그인하지 못했습니다.");
     } finally {
@@ -157,6 +165,12 @@ export function LoginPage() {
                 있던 화면으로 돌아갑니다.
               </Alert>
             )}
+            {ssoError && !error && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                SSO 로그인을 마치지 못했습니다. 다시 시도하거나 아이디와
+                비밀번호로 로그인해 주세요.
+              </Alert>
+            )}
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
                 {error}
@@ -202,7 +216,7 @@ export function LoginPage() {
                   fullWidth
                   variant="outlined"
                   size="large"
-                  href="/api/v1/auth/oidc/start"
+                  href={ssoStartHref}
                 >
                   {config.oidc.display_name || "Keycloak SSO"}로 계속
                 </Button>
