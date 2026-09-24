@@ -77,3 +77,4 @@ flowchart TD
 ### 2.9 서비스 관리 콘솔 (`/admin`)
 ![관리자 설정](images/14_admin_service_console.png)
 - 서비스 기본 정보, Keycloak OIDC SSO Discovery, AI 모델 및 토큰 한도(최대 256K), RBAC 권한 정책
+- 다른 서비스로 보내기: 승인된 기억을 마크다운으로 muni·ptium·weekly 에 넘길 수 있는 사내 서비스 허용 목록(기본 비어 있음) — [관리자 가이드](ADMIN_GUIDE.md#다른-서비스로-보내기)

@@ -35,6 +35,8 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 	r.Post("/api/v1/auth/login", s.localLogin)
 	r.Get("/api/v1/auth/oidc/start", s.oidcStart)
 	r.Get("/api/v1/auth/oidc/callback", s.oidcCallback)
+	// 표가 곧 자격이다: 로그인 없이 표를 들고 온 쪽에 문서를 내준다.
+	r.Get("/api/v1/handoff/claims/{claim}", s.redeemHandoffClaim)
 	r.Route("/api/v1", func(api chi.Router) {
 		api.Use(s.authenticate)
 		api.Post("/auth/logout", s.logout)
@@ -60,6 +62,8 @@ func New(st *store.Store, version, commit, builtAt string) http.Handler {
 		api.Get("/approvals", s.listApprovals)
 		api.Post("/approvals/{approvalID}/review", s.reviewApproval)
 		api.Post("/ai/stream", s.streamAI)
+		api.Get("/handoff/targets", s.handoffTargets)
+		api.Post("/handoff/claims", s.issueHandoffClaim)
 		api.Route("/personal", func(p chi.Router) {
 			p.Get("/preferences", s.getPreferences)
 			p.Put("/preferences", s.updatePreferences)
