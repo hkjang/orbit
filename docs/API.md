@@ -23,3 +23,34 @@ data scope required by each tool:
 
 Memory creation through REST or MCP enters `pending` only when the administrator
 has enabled the approval workflow. Otherwise the review process is omitted.
+
+## Time Travel — `GET /orbit?at=`
+
+`GET /api/v1/orbit` accepts an optional `at` query parameter and rebuilds the
+graph as it stood at that moment. Two formats are accepted:
+
+| Value | Meaning |
+|---|---|
+| `2025-06-01T09:00:00Z` | RFC3339 instant, used as given |
+| `2025-06-01` | date only — read as **midnight UTC** of that day |
+
+Anything else returns `400 validation_error`. Omitting `at` returns the current
+graph.
+
+The response carries three fields that describe the point in time:
+
+| Field | Present | Meaning |
+|---|---|---|
+| `earliest_at` | always | Oldest record you can travel back to (first `people.created_at` or `interactions.occurred_at`). `null` when the user has no records at all. |
+| `at` | only with `?at=` | The instant the graph was rebuilt for, echoed back. |
+| `historical` | only with `?at=` | Always `true`, so a client can tell a past view from the present one. |
+
+Every other key (`center`, `nodes`, `contexts`, `links`, `categories`,
+`generated_at`) is the same in both cases. Use `earliest_at` as the lower bound
+of any time slider or range picker — there is nothing to show before it.
+
+What actually travels: closeness, momentum, `last_interaction_at` and
+`memory_count` are recomputed from the interactions and memories recorded up to
+`at`. Importance, categories/label and the anchored flag are set by hand and
+have no change history, so the **current** values are used for those. What comes
+back is the distance and drift that interactions created, not a full snapshot.
