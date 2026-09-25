@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -134,5 +137,108 @@ func TestOrbitRangeMatchesLegacyJoin(t *testing.T) {
 		seedInteraction(t, st, me, p, base.AddDate(0, 0, 3))
 		// 다른 사용자의 5~6년 전 기록이 있어도 내 첫 기록은 base 다.
 		check(t, me, &base)
+	})
+}
+
+// callOrbit 은 실제 핸들러 getOrbit 을 그대로 부르고 응답 JSON 을 키별 원본으로
+// 돌려준다. 키가 아예 빠진 것과 null 로 들어온 것을 구별해야 하므로
+// map[string]any 가 아니라 map[string]json.RawMessage 로 받는다.
+func callOrbit(t *testing.T, s *Server, userID, at string) map[string]json.RawMessage {
+	t.Helper()
+	url := "/api/v1/orbit"
+	if at != "" {
+		url += "?at=" + at
+	}
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req = req.WithContext(context.WithValue(req.Context(), userContextKey, User{ID: userID}))
+	rec := httptest.NewRecorder()
+
+	s.getOrbit(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s 상태가 %d, 200이어야 한다: %s", url, rec.Code, rec.Body.String())
+	}
+	out := map[string]json.RawMessage{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("GET %s 응답 디코딩: %v", url, err)
+	}
+	return out
+}
+
+// decodeTime 은 응답의 한 키를 *time.Time 으로 읽는다. 키가 없으면 실패한다 —
+// "없음"과 "null"은 호출자에게 다른 뜻이기 때문이다.
+func decodeTime(t *testing.T, body map[string]json.RawMessage, key string) *time.Time {
+	t.Helper()
+	raw, ok := body[key]
+	if !ok {
+		t.Fatalf("응답에 %q 키가 없다", key)
+	}
+	var at *time.Time
+	if err := json.Unmarshal(raw, &at); err != nil {
+		t.Fatalf("%q 디코딩: %v", key, err)
+	}
+	return at
+}
+
+// 같은 GET /api/v1/orbit 인데 ?at= 이 붙으면 earliest_at 이 통째로 빠져 있었다.
+// 화면은 if 가드로 가려 왔지만 API 키·MCP 호출자는 시간 여행 가능 구간을 알
+// 방법이 없었다. 두 경로가 같은 자원을 같은 모양으로 돌려주는지 실제 핸들러를
+// 두 번 불러 확인한다.
+func TestOrbitAtResponseCarriesEarliestAt(t *testing.T) {
+	st := openTestStore(t)
+	s := &Server{store: st}
+	base := time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+
+	t.Run("기록이 있으면 두 경로의 earliest_at 이 같다", func(t *testing.T) {
+		me := seedUser(t, st)
+		p := seedPerson(t, st, me, base)
+		earliest := base.AddDate(-1, 0, 0)
+		seedInteraction(t, st, me, p, earliest)
+
+		now := callOrbit(t, s, me, "")
+		past := callOrbit(t, s, me, base.AddDate(0, 1, 0).Format(time.RFC3339))
+
+		gotPast := decodeTime(t, past, "earliest_at")
+		if gotPast == nil || !gotPast.Equal(earliest) {
+			t.Fatalf("과거 응답의 earliest_at = %v, %v 여야 한다", gotPast, earliest)
+		}
+		if gotNow := decodeTime(t, now, "earliest_at"); !sameInstant(gotNow, gotPast) {
+			t.Fatalf("두 경로의 earliest_at 이 다르다: 현재 %v, 과거 %v", gotNow, gotPast)
+		}
+
+		var historical bool
+		if err := json.Unmarshal(past["historical"], &historical); err != nil || !historical {
+			t.Fatalf("과거 응답의 historical = %s (err=%v), true 여야 한다", past["historical"], err)
+		}
+		if _, ok := now["historical"]; ok {
+			t.Fatalf("현재 응답에는 historical 이 없어야 한다: %s", now["historical"])
+		}
+	})
+
+	t.Run("기록이 없으면 두 경로 모두 null", func(t *testing.T) {
+		me := seedUser(t, st)
+
+		for _, tc := range []struct {
+			name string
+			at   string
+		}{{"현재", ""}, {"과거", base.Format(time.RFC3339)}} {
+			body := callOrbit(t, s, me, tc.at)
+			if got := decodeTime(t, body, "earliest_at"); got != nil {
+				t.Fatalf("%s 경로의 earliest_at = %v, null 이어야 한다", tc.name, got)
+			}
+		}
+	})
+
+	t.Run("기존 키는 하나도 사라지지 않는다", func(t *testing.T) {
+		me := seedUser(t, st)
+		p := seedPerson(t, st, me, base)
+		seedInteraction(t, st, me, p, base)
+
+		past := callOrbit(t, s, me, base.AddDate(0, 1, 0).Format(time.RFC3339))
+		for _, key := range []string{"center", "nodes", "contexts", "links", "categories", "generated_at", "at", "historical", "earliest_at"} {
+			if _, ok := past[key]; !ok {
+				t.Fatalf("과거 응답에 %q 키가 없다", key)
+			}
+		}
 	})
 }

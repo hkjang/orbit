@@ -161,13 +161,22 @@ func (s *Server) writeOrbitAt(w http.ResponseWriter, r *http.Request, at time.Ti
 		internalError(w, r, err)
 		return
 	}
+	// 현재 시점 응답(getOrbit)과 같은 키를 같은 뜻으로 담는다. 화면은 처음
+	// 열 때 받은 값을 들고 있어 없어도 버티지만, ?at= 만 부르는 API 키·MCP
+	// 호출자는 이 값이 없으면 시간 여행이 어디까지 가능한지 알 길이 없다.
+	first, err := s.orbitRange(r.Context(), u.ID)
+	if err != nil {
+		internalError(w, r, err)
+		return
+	}
 	writeJSON(w, 200, map[string]any{
-		"center":     map[string]string{"id": u.ID, "name": u.DisplayName},
-		"nodes":      nodes,
-		"contexts":   contexts,
-		"links":      links,
-		"categories": categories,
-		"at":         at,
+		"center":      map[string]string{"id": u.ID, "name": u.DisplayName},
+		"nodes":       nodes,
+		"contexts":    contexts,
+		"links":       links,
+		"categories":  categories,
+		"earliest_at": first,
+		"at":          at,
 		// 과거 화면임을 화면이 분명히 알 수 있게 표시한다.
 		"historical":   true,
 		"generated_at": time.Now(),
