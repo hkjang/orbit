@@ -151,10 +151,31 @@ func (s *Server) writeOrbitAt(w http.ResponseWriter, r *http.Request, at time.Ti
 		internalError(w, r, err)
 		return
 	}
-	links, err := s.orbitLinks(r.Context(), u.ID)
+	all, err := s.orbitLinks(r.Context(), u.ID)
 	if err != nil {
 		internalError(w, r, err)
 		return
+	}
+	// 사람↔사람 연결은 사용자가 직접 정하는 값이라 변경 이력이 없다 — 위에 적은
+	// 대로 그런 값은 오늘의 값을 쓴다. 그래서 링크에 시점 필터를 걸지는 않지만,
+	// 그날 곁에 없던 사람을 가리키는 끝점은 이 응답 안에서 가리킬 상대가 없어
+	// 끊긴 참조가 된다. 화면은 끝점 없는 링크를 건너뛰어 견디지만 ?at= 만 부르는
+	// 호출자에게는 응답 하나로 그래프가 닫혀 있어야 한다. 그래서 두 끝점이 모두
+	// nodes 에 있는 링크만 남긴다. 거르는 자리가 orbitLinks 가 아니라 여기인
+	// 이유는 그 함수를 현재 시점 경로(getOrbit)와 함께 쓰기 때문이다.
+	present := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		if nodeID, ok := n["id"].(string); ok {
+			present[nodeID] = true
+		}
+	}
+	links := make([]map[string]any, 0, len(all))
+	for _, l := range all {
+		a, aok := l["a"].(string)
+		b, bok := l["b"].(string)
+		if aok && bok && present[a] && present[b] {
+			links = append(links, l)
+		}
 	}
 	categories, err := s.userCategories(r.Context(), u.ID)
 	if err != nil {

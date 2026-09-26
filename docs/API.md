@@ -54,3 +54,9 @@ What actually travels: closeness, momentum, `last_interaction_at` and
 `at`. Importance, categories/label and the anchored flag are set by hand and
 have no change history, so the **current** values are used for those. What comes
 back is the distance and drift that interactions created, not a full snapshot.
+
+`links` follows the same rule — person-to-person links are set by hand, so the
+current ones are used. They are, however, restricted to the nodes in the same
+response: a link is only returned when **both** endpoints appear in `nodes`, so
+`links[*].a` and `links[*].b` never point outside it and the graph in a `?at=`
+response is closed on its own.
