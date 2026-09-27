@@ -57,6 +57,40 @@ func (s *Server) dataKeyVersion(ctx context.Context, userID string, version int)
 	return s.store.Vault.UnwrapKey(wrapped)
 }
 
+// looksLikeUUID는 값이 Orbit이 발급한 id 모양(internal/id.New가 만드는
+// 8-4-4-4-12 16진수)인지만 본다.
+//
+// people·person_links의 id는 uuid 컬럼이라, 모양이 어긋난 문자열을 그대로
+// 질의 파라미터로 넘기면 postgres가 캐스팅 오류를 내고 핸들러는 그것을
+// internalError로 감싸 500을 낸다. 호출자가 잘못 보낸 요청인데 서버 고장으로
+// 보이고, 사용자가 만든 문자열마다 서버 로그에 에러가 쌓인다. 그래서 DB에
+// 묻기 전에 여기서 걸러 "그런 자원이 없다"(404)로 끝낸다.
+//
+// 대소문자는 가리지 않는다 — 같은 id를 대문자로 적은 것뿐이고 postgres도
+// 그렇게 읽으므로, 지금 찾아지던 것이 이 가드 때문에 사라지면 안 된다.
+// 반대로 중괄호로 감싼 형태나 하이픈 없는 형태는 postgres가 받아 주더라도
+// 거부한다 — Orbit은 그 모양의 id를 발급한 적이 없다.
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // escapeLike는 검색어 안의 ILIKE 와일드카드를 글자 그대로 다루게 한다.
 // 이 처리가 없으면 "100%"를 찾을 때 "100"으로 시작하는 모든 것이 걸리고,
 // "C_O"는 가운데 한 글자가 무엇이든 일치한다.
@@ -139,6 +173,10 @@ func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getPerson(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	personID := chi.URLParam(r, "personID")
+	if !looksLikeUUID(personID) {
+		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+		return
+	}
 	var p Person
 	var email, phone, note string
 	var version int
@@ -310,6 +348,10 @@ func (s *Server) createPerson(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updatePerson(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	personID := chi.URLParam(r, "personID")
+	if !looksLikeUUID(personID) {
+		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+		return
+	}
 	var in personInput
 	if !decodeJSON(w, r, &in) {
 		return
@@ -367,6 +409,10 @@ func (s *Server) updatePerson(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deletePerson(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	personID := chi.URLParam(r, "personID")
+	if !looksLikeUUID(personID) {
+		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+		return
+	}
 	tag, err := s.store.DB.Exec(r.Context(), `DELETE FROM people WHERE user_id=$1 AND id=$2`, u.ID, personID)
 	if err != nil {
 		internalError(w, r, err)
@@ -610,6 +656,10 @@ func normalizeLink(a, b string) (string, string) {
 func (s *Server) listPersonLinks(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	personID := chi.URLParam(r, "personID")
+	if !looksLikeUUID(personID) {
+		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+		return
+	}
 	rows, err := s.store.DB.Query(r.Context(), `SELECT l.id,l.kind,l.strength,p.id,p.display_name,p.company,p.role_title FROM person_links l JOIN people p ON p.id = CASE WHEN l.person_a=$2 THEN l.person_b ELSE l.person_a END WHERE l.user_id=$1 AND $2 IN (l.person_a,l.person_b) ORDER BY l.strength DESC,p.display_name`, u.ID, personID)
 	if err != nil {
 		internalError(w, r, err)
@@ -636,6 +686,12 @@ func (s *Server) listPersonLinks(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createPersonLink(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	personID := chi.URLParam(r, "personID")
+	// 경로의 id는 "그런 사람이 없다"(404), 본문의 id는 호출자가 고칠 입력이라
+	// 다른 본문 검증(kind·자기연결·strength)과 같은 400으로 가른다.
+	if !looksLikeUUID(personID) {
+		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+		return
+	}
 	var in struct {
 		PersonID string  `json:"person_id"`
 		Kind     string  `json:"kind"`
@@ -653,6 +709,10 @@ func (s *Server) createPersonLink(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.PersonID == personID {
 		writeError(w, 400, "validation_error", "같은 사람끼리는 이을 수 없습니다.")
+		return
+	}
+	if !looksLikeUUID(in.PersonID) {
+		writeError(w, 400, "validation_error", "이을 사람을 확인해 주세요.")
 		return
 	}
 	if in.Strength <= 0 || in.Strength > 1 {
@@ -680,6 +740,11 @@ func (s *Server) createPersonLink(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deletePersonLink(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	linkID := chi.URLParam(r, "linkID")
+	// person_links.id도 uuid 컬럼(004_person_links.sql)이라 같은 가드가 필요하다.
+	if !looksLikeUUID(linkID) {
+		writeError(w, 404, "not_found", "연결을 찾을 수 없습니다.")
+		return
+	}
 	tag, err := s.store.DB.Exec(r.Context(), `DELETE FROM person_links WHERE user_id=$1 AND id=$2`, u.ID, linkID)
 	if err != nil {
 		internalError(w, r, err)
