@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/hkjang/orbit/internal/id"
 )
 
 // 미래 시각은 DB에 묻기 전에 400으로 돌려보낸다. store가 nil인 서버로 부르면
@@ -93,4 +96,125 @@ func TestValidateInteractionInput(t *testing.T) {
 			}
 		}
 	})
+}
+
+// personRequest는 chi 라우트 파라미터를 실어 준다. 실제 라우팅을 거치지 않고
+// 핸들러를 직접 부르면 chi.URLParam은 빈 문자열을 주므로, 라우트 컨텍스트를
+// 손수 넣어야 프로덕션과 같은 값이 핸들러에 들어간다.
+func personRequest(t *testing.T, method, target, body string, params map[string]string) *http.Request {
+	t.Helper()
+	var req *http.Request
+	if body == "" {
+		req = httptest.NewRequest(method, target, nil)
+	} else {
+		req = httptest.NewRequest(method, target, strings.NewReader(body))
+	}
+	rctx := chi.NewRouteContext()
+	for k, v := range params {
+		rctx.URLParams.Add(k, v)
+	}
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	ctx = context.WithValue(ctx, userContextKey, User{ID: "u1"})
+	return req.WithContext(ctx)
+}
+
+func assertAPIError(t *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
+	t.Helper()
+	if rec.Code != status {
+		t.Fatalf("상태가 %d, %d이어야 한다 (본문: %s)", rec.Code, status, rec.Body.String())
+	}
+	var out apiError
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Error.Code != code || out.Error.Message == "" {
+		t.Fatalf("응답 본문이 다르다: %+v", out)
+	}
+}
+
+// uuid 모양이 아닌 경로 파라미터는 DB에 묻기 전에 404로 끝나야 한다.
+// store가 nil인 서버로 부르므로, 질의에 닿으면 패닉으로 빨개진다.
+func TestPersonHandlersRejectMalformedPathIDBeforeDB(t *testing.T) {
+	const bad = "not-a-uuid"
+	good := id.New()
+	s := &Server{store: nil}
+
+	t.Run("getPerson", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		s.getPerson(rec, personRequest(t, http.MethodGet, "/api/v1/people/"+bad, "", map[string]string{"personID": bad}))
+		assertAPIError(t, rec, http.StatusNotFound, "not_found")
+	})
+
+	t.Run("updatePerson", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		body := `{"display_name":"홍길동","importance":0.5}`
+		s.updatePerson(rec, personRequest(t, http.MethodPut, "/api/v1/people/"+bad, body, map[string]string{"personID": bad}))
+		assertAPIError(t, rec, http.StatusNotFound, "not_found")
+	})
+
+	t.Run("deletePerson", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		s.deletePerson(rec, personRequest(t, http.MethodDelete, "/api/v1/people/"+bad, "", map[string]string{"personID": bad}))
+		assertAPIError(t, rec, http.StatusNotFound, "not_found")
+	})
+
+	t.Run("listPersonLinks", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		s.listPersonLinks(rec, personRequest(t, http.MethodGet, "/api/v1/people/"+bad+"/links", "", map[string]string{"personID": bad}))
+		assertAPIError(t, rec, http.StatusNotFound, "not_found")
+	})
+
+	t.Run("createPersonLink", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		body := `{"person_id":"` + good + `","kind":"knows"}`
+		s.createPersonLink(rec, personRequest(t, http.MethodPost, "/api/v1/people/"+bad+"/links", body, map[string]string{"personID": bad}))
+		assertAPIError(t, rec, http.StatusNotFound, "not_found")
+	})
+
+	t.Run("deletePersonLink의 linkID", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := personRequest(t, http.MethodDelete, "/api/v1/people/"+good+"/links/"+bad, "", map[string]string{"personID": good, "linkID": bad})
+		s.deletePersonLink(rec, req)
+		assertAPIError(t, rec, http.StatusNotFound, "not_found")
+	})
+}
+
+// 본문 필드는 호출자가 고칠 수 있는 입력이므로 400이다.
+func TestCreatePersonLinkRejectsMalformedBodyPersonID(t *testing.T) {
+	good := id.New()
+	rec := httptest.NewRecorder()
+	body := `{"person_id":"not-a-uuid","kind":"knows"}`
+	req := personRequest(t, http.MethodPost, "/api/v1/people/"+good+"/links", body, map[string]string{"personID": good})
+
+	(&Server{store: nil}).createPersonLink(rec, req)
+
+	assertAPIError(t, rec, http.StatusBadRequest, "validation_error")
+}
+
+func TestLooksLikeUUID(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"id.New()가 만든 값", id.New(), true},
+		{"고정된 정상 uuid", "c4329119-1f2a-4b6d-8f0e-6bb9bd380a11", true},
+		{"대문자 16진수도 같은 id다", "C4329119-1F2A-4B6D-8F0E-6BB9BD380A11", true},
+		{"빈 문자열", "", false},
+		{"중괄호로 감싼 것", "{c4329119-1f2a-4b6d-8f0e-6bb9bd380a11}", false},
+		{"하이픈이 없는 것", "c43291191f2a4b6d8f0e6bb9bd380a11", false},
+		{"길이가 짧은 것", "c4329119-1f2a-4b6d-8f0e-6bb9bd380a1", false},
+		{"길이가 긴 것", "c4329119-1f2a-4b6d-8f0e-6bb9bd380a111", false},
+		{"하이픈 자리가 어긋난 것", "c432911-91f2a-4b6d-8f0e-6bb9bd380a11", false},
+		{"16진수가 아닌 글자", "c4329119-1f2a-4b6d-8f0e-6bb9bd380zzz", false},
+		{"SQL을 섞은 것", "1' OR '1'='1", false},
+		{"공백이 붙은 것", " c4329119-1f2a-4b6d-8f0e-6bb9bd380a11", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := looksLikeUUID(tc.value); got != tc.want {
+				t.Fatalf("looksLikeUUID(%q)=%v, %v이어야 한다", tc.value, got, tc.want)
+			}
+		})
+	}
 }
