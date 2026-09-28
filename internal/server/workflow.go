@@ -130,6 +130,14 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	personID := r.URL.Query().Get("person_id")
+	// queryMemoriesLimit은 이 값을 NULLIF($2,'')::uuid로 캐스팅한다. 모양이
+	// 어긋난 문자열을 그대로 내려보내면 postgres가 22P02를 내고 아래 internalError가
+	// 500으로 감싸, 호출자는 자기가 잘못 보낸 줄 모르고 서버 로그에는 사용자 실수가
+	// 내부 오류로 쌓인다. 빈 값은 "사람을 가리지 않음"이라는 뜻이니 그대로 통과시킨다.
+	if personID != "" && !looksLikeUUID(personID) {
+		writeError(w, 400, "validation_error", "사람을 확인해 주세요.")
+		return
+	}
 	status := r.URL.Query().Get("status")
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	memories, err := s.searchMemories(r.Context(), u.ID, personID, status, query)

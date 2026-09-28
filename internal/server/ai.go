@@ -30,6 +30,19 @@ func (s *Server) streamAI(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "validation_error", "질문은 1~32,000자로 입력해 주세요.")
 		return
 	}
+	// relationshipContext는 이 값을 uuid 컬럼인 p.id와 맞대므로, 모양이 어긋난
+	// 문자열은 postgres의 22P02를 거쳐 500이 된다. 잘못 보낸 요청이니 400으로 돌려보낸다.
+	// 빈 값은 사람을 고르지 않은 전체 관계 요약 경로라 그대로 둔다.
+	//
+	// 이 가드를 설정 조회보다 앞에 두었다. 그 대가로 AI가 비활성이면서 동시에
+	// person_id가 깨진 요청의 응답이 503 ai_disabled에서 400으로 바뀐다 —
+	// 입력 검증을 DB 앞에서 끝내는 이 저장소의 관례(validateInteractionInput,
+	// data.go의 id 가드)를 따른 의도된 변경이고, 호출자가 먼저 고쳐야 할 것은
+	// 자기 요청 쪽이다.
+	if in.PersonID != "" && !looksLikeUUID(in.PersonID) {
+		writeError(w, 400, "validation_error", "사람을 확인해 주세요.")
+		return
+	}
 	var settings AISettings
 	var secret string
 	if err := s.readSetting(r.Context(), "ai", "provider", &settings, &secret); err != nil {
