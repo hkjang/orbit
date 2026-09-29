@@ -13,7 +13,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
+
+var errAIRelationshipNotFound = errors.New("AI relationship not found")
 
 func (s *Server) streamAI(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
@@ -63,6 +67,10 @@ func (s *Server) streamAI(w http.ResponseWriter, r *http.Request) {
 	}
 	contextText, err := s.relationshipContext(r.Context(), u.ID, in.PersonID)
 	if err != nil {
+		if errors.Is(err, errAIRelationshipNotFound) {
+			writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+			return
+		}
 		internalError(w, r, err)
 		return
 	}
@@ -96,6 +104,11 @@ func (s *Server) relationshipContext(ctx context.Context, userID, personID strin
 		var last *time.Time
 		var anchored bool
 		err := s.store.DB.QueryRow(ctx, `SELECT p.display_name,r.relationship_label,r.momentum,r.last_interaction_at,r.anchored FROM people p JOIN relationships r ON r.person_id=p.id WHERE p.id=$1 AND p.user_id=$2`, personID, userID).Scan(&name, &label, &momentum, &last, &anchored)
+		// 기억 복호화 키 조회도 ErrNoRows를 반환하므로, 사람을 찾는 첫 조회만
+		// 구분한다. 이후 내부 오류를 사람 없음으로 숨기지 않는다.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", errAIRelationshipNotFound
+		}
 		if err != nil {
 			return "", err
 		}
