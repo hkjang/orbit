@@ -162,6 +162,12 @@ func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 		}
 		people = append(people, p)
 	}
+	// 행 스트림이 도중에 깨져도 rows.Next() 는 조용히 false 를 준다. 분류 조회보다
+	// 먼저 물어야 원인 오류가 카테고리 쪽 오류에 가려지지 않는다.
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	categories, err := s.userCategories(r.Context(), u.ID)
 	if err != nil {
 		internalError(w, r, err)

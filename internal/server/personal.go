@@ -78,6 +78,10 @@ func (s *Server) listKeys(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, map[string]any{"id": keyID, "version": version, "status": status, "created_at": created, "retired_at": retired})
 	}
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	var policy KeyPolicySettings
 	_ = s.readSetting(r.Context(), "security", "key_policy", &policy, nil)
 	writeJSON(w, 200, map[string]any{"keys": items, "policy": policy})
@@ -289,6 +293,10 @@ func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(scopes, &item.Scopes)
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	writeJSON(w, 200, map[string]any{"api_keys": items})
 }
 func (s *Server) createAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -364,6 +372,10 @@ func (s *Server) listKeyPermissions(w http.ResponseWriter, r *http.Request) {
 		var permissions []string
 		_ = json.Unmarshal(raw, &permissions)
 		items = append(items, map[string]any{"id": permissionID, "key_version_id": keyID, "user_id": userID, "user_name": displayName, "key_version": version, "key_status": keyStatus, "principal_type": principalType, "principal_id": principalID, "permissions": permissions, "created_at": created})
+	}
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
 	}
 	writeJSON(w, 200, map[string]any{"permissions": items})
 }

@@ -212,6 +212,10 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		users = append(users, u)
 	}
+	if err := rows.Err(); err != nil {
+		internalError(w, r, err)
+		return
+	}
 	writeJSON(w, 200, map[string]any{"users": users})
 }
 
