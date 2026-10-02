@@ -157,6 +157,14 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 			}
 			items = append(items, map[string]any{"id": personID, "name": name, "company": company, "role": role, "relationship": label, "last_interaction_at": last})
 		}
+		// pgx 는 행 스트림이 실행 중에 깨져도 Next() 를 조용히 false 로 돌려주고
+		// 오류를 rows.Err() 에만 남긴다. 이 검사가 없으면 잘린(또는 0행) 검색
+		// 결과가 isError 없는 정상 응답으로 나가고, 외부 MCP 에이전트는 "검색
+		// 결과가 정말 그것뿐" 이라고 결론 낸다. 위 루프가 스캔 오류를 바깥 err
+		// 에 담고 break 하므로, 그 원인을 덮지 않도록 비어 있을 때만 채운다.
+		if err == nil {
+			err = rows.Err()
+		}
 		result = items
 	case "orbit_get_relationship":
 		var args struct {
