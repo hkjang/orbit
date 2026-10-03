@@ -75,9 +75,16 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 	for _, section := range sections {
 		array := newJSONArray(w, section.name)
 		if err := section.write(r, array); err != nil {
-			// 헤더는 이미 나갔으므로 상태 코드를 바꿀 수 없다. 아래 complete
-			// 표시를 남기지 않는 것으로 "이 파일은 온전하지 않다"를 알린다.
+			// 헤더는 이미 나갔으므로(58줄의 첫 Fprintf 가 암시적으로 200 을
+			// 보냈다) 상태 코드를 바꿀 수 없다. 그래서 끊겼다는 사실은 본문으로만
+			// 전할 수 있는데, 열어 둔 배열과 최상위 객체를 닫지 않으면 본문이
+			// 애초에 JSON 이 아니어서 그 신호를 읽을 방법이 없다 — jq·json.load·
+			// 브라우저 모두 unexpected end of input 만 낸다. 닫아 주면 사용자는
+			// complete:false 로 온전하지 않음을, 뒤따르는 섹션 키가 없는 것으로
+			// 어디까지 받았는지를 파싱해서 알 수 있다.
 			slog.Error("내보내기가 중간에 끊겼습니다", "user", u.ID, "section", section.name, "error", err)
+			array.close()
+			fmt.Fprintf(w, `,"complete":false,"failed_section":%q}`, section.name)
 			return
 		}
 		array.close()
