@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func streamAIRequest(personID string) *http.Request {
@@ -66,4 +68,55 @@ func TestStreamAILetsWellFormedPersonIDReachDB(t *testing.T) {
 			}
 		})
 	}
+}
+
+// safeAIError는 제공자 오류를 slog로 내보내기 전에 길이를 자른다. 자르는 자리가
+// 바이트 단위라 한국어(룬 3바이트) 오류가 300바이트 경계를 걸치면 마지막 룬이
+// 쪼개져 꼬리가 U+FFFD로 깨진다 — 로그를 읽으려고 남기는 값이니 깨지면 안 된다.
+// 반대로 300바이트 이하는 한 바이트도 손대지 않아야 한다(지금 동작 유지).
+func TestSafeAIError(t *testing.T) {
+	// 앞에 ASCII 한 글자를 두어 300이 룬 경계와 어긋나게 만든다. 한국어 룬은
+	// 1+3k 바이트 자리에서 시작하므로 300번째 바이트는 어떤 룬의 중간이다.
+	split := "x" + strings.Repeat("한", 150)
+	if utf8.RuneStart(split[300]) {
+		t.Fatalf("시험 입력이 300바이트에서 룬을 쪼개지 않는다 — 입력을 고쳐야 한다")
+	}
+
+	t.Run("룬을 쪼개지 않는다", func(t *testing.T) {
+		got := safeAIError(errors.New(split))
+		if !utf8.ValidString(got) {
+			t.Fatalf("반환값이 올바른 UTF-8이 아니다: %q", got)
+		}
+		if strings.ContainsRune(got, utf8.RuneError) {
+			t.Fatalf("반환값에 U+FFFD가 섞였다: %q", got)
+		}
+		if len(got) > 300 {
+			t.Fatalf("길이가 %d바이트 — 300바이트를 넘는다", len(got))
+		}
+		// 자르기 전 온전한 룬은 그대로 남아야 한다(너무 많이 물러나지 않았는지).
+		if len(got) < 300-utf8.UTFMax {
+			t.Fatalf("길이가 %d바이트 — 룬 경계보다 더 물러났다", len(got))
+		}
+		if !strings.HasPrefix(split, got) {
+			t.Fatalf("반환값이 입력의 접두사가 아니다: %q", got)
+		}
+	})
+
+	t.Run("300바이트 이하는 그대로 돌려준다", func(t *testing.T) {
+		cases := []string{
+			"",
+			"provider status 401: unauthorized",
+			"제공자 오류: 인증에 실패했습니다",
+			strings.Repeat("a", 300),
+			"x" + strings.Repeat("한", 99) + "ab", // 정확히 300바이트
+		}
+		for _, in := range cases {
+			if len(in) > 300 {
+				t.Fatalf("시험 입력이 %d바이트 — 300 이하여야 한다", len(in))
+			}
+			if got := safeAIError(errors.New(in)); got != in {
+				t.Fatalf("safeAIError(%q) = %q — 바뀌었다", in, got)
+			}
+		}
+	})
 }
