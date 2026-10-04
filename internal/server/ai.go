@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -86,8 +88,22 @@ func (s *Server) streamAI(w http.ResponseWriter, r *http.Request) {
 	sendSSE(w, "meta", map[string]any{"model": settings.Model, "max_output_tokens": limit})
 	flusher.Flush()
 	if err := s.proxyAIStream(r.Context(), w, flusher, settings, in.Prompt, contextText, limit); err != nil {
+		// 사용자에게는 원인을 말하지 않는다 — 제공자 응답 본문에 무엇이 들었는지
+		// 알 수 없어 그대로 흘리면 안 된다. 그래서 고정 문구를 먼저 보내 응답
+		// 바이트열을 예전과 똑같이 유지하고, 원인은 운영자만 보는 로그로 돌린다.
 		sendSSE(w, "error", map[string]string{"message": "AI 응답을 완료하지 못했습니다."})
 		flusher.Flush()
+		// 클라이언트가 탭을 닫으면 context canceled 가 올라온다. 정상적인 이탈이라
+		// ERROR 로 남기면 이탈마다 오탐이 쌓인다 — internalError(respond.go)와
+		// 같은 판정을 쓴다.
+		if errors.Is(err, r.Context().Err()) {
+			return
+		}
+		// 이 한 줄이 없으면 제공자 401/429/500·잘못된 엔드포인트·타임아웃이 전부
+		// 위의 같은 한 문장으로만 보여, 운영자가 "AI가 안 된다"는 신고를 받아도
+		// 원인을 알 방법이 없다. 감사(s.audit)에는 넘기지 않는다 — 감사 출력이
+		// 제공자 응답 원문을 다시 내보내게 된다.
+		slog.Error("AI 스트림이 중간에 끊겼습니다", "user", u.ID, "model", settings.Model, "error", safeAIError(err))
 		return
 	}
 	sendSSE(w, "done", map[string]bool{"ok": true})
@@ -305,8 +321,16 @@ func sendSSE(w io.Writer, event string, value any) {
 }
 func safeAIError(err error) string {
 	message := err.Error()
-	if len(message) > 300 {
-		message = message[:300]
+	if len(message) <= 300 {
+		return message
 	}
-	return message
+	// 바이트로 그냥 자르면 멀티바이트 룬이 쪼개져 꼬리가 U+FFFD로 깨진다 —
+	// 한국어 제공자 오류(룬 3바이트)에서는 300이 룬 경계와 어긋나기 쉽다.
+	// 300번째 바이트가 룬의 중간(연속 바이트)이면 그 룬의 시작까지 물러난다.
+	// 연속 바이트는 최대 3개라 이 되돌림은 길어지지 않는다.
+	cut := 300
+	for cut > 0 && !utf8.RuneStart(message[cut]) {
+		cut--
+	}
+	return message[:cut]
 }
