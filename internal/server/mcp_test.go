@@ -185,6 +185,111 @@ func TestMCPAllowsEmptyPersonIDWhereOptional(t *testing.T) {
 	}
 }
 
+// mcpCreateMemory 는 title·content 가 비면 errors.New("title and content
+// required") 를 돌려주고, mcpCall 의 오류 매핑(mcp.go:244~250)은 pgx.ErrNoRows 가
+// 아닌 모든 오류를 "요청을 처리하지 못했습니다." 한 문장으로 덮는다 — 호출한
+// 외부 모델은 무엇이 빠졌는지도, 애초에 자기 잘못인지 서버 장애인지도 알 수 없어
+// 스스로 고칠 수 없다. 빠진 필드 이름을 말해 주면 그 자리를 채워 다시 부른다.
+func TestMCPRejectsMissingMemoryFieldsBeforeDB(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    map[string]any
+		want    []string
+		notWant []string
+	}{
+		{"title 누락", map[string]any{"content": "본문"}, []string{"title"}, []string{"content"}},
+		{"content 누락", map[string]any{"title": "제목"}, []string{"content"}, []string{"title"}},
+		{"둘 다 누락", map[string]any{}, []string{"title", "content"}, nil},
+		{"title 이 공백뿐", map[string]any{"title": "  ", "content": "본문"}, []string{"title"}, []string{"content"}},
+		{"content 가 공백뿐", map[string]any{"title": "제목", "content": "  "}, []string{"content"}, []string{"title"}},
+		{"둘 다 공백뿐", map[string]any{"title": "  ", "content": "\t\n"}, []string{"title", "content"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, panicked := callWithoutStore((&Server{}).mcp, mcpToolCall(t, "orbit_create_memory", tc.args))
+			if panicked {
+				t.Fatalf("질의까지 내려갔다 — title·content 검증이 DB 앞에서 끝나지 않는다")
+			}
+			result, text := mcpResultText(t, rec)
+			if result["isError"] != true {
+				t.Fatalf("isError = %v, want true: %v", result["isError"], result)
+			}
+			for _, field := range tc.want {
+				if !strings.Contains(text, field) {
+					t.Fatalf("메시지가 빠진 필드 %q 를 말하지 않는다: %q", field, text)
+				}
+			}
+			for _, field := range tc.notWant {
+				if strings.Contains(text, field) {
+					t.Fatalf("메시지가 채워 보낸 필드 %q 까지 빠졌다고 말한다: %q", field, text)
+				}
+			}
+		})
+	}
+}
+
+// 헬퍼 자체의 판정. 정상 값에 "" 를 돌려주는 줄이 곧 "가드가 정상 경로를 삼키지
+// 않는다" 는 선이고, 공백만 있는 값은 mcpCreateMemory 의 TrimSpace 와 같은 기준으로
+// 비었다고 봐야 두 곳의 판정이 어긋나지 않는다.
+func TestMCPMemoryFieldError(t *testing.T) {
+	cases := []struct {
+		name, title, content string
+		wantEmpty            bool
+		want                 []string
+		notWant              []string
+	}{
+		{name: "둘 다 채워져 있으면 통과", title: "제목", content: "본문", wantEmpty: true},
+		{name: "앞뒤 공백이 붙어도 통과", title: " 제목 ", content: "\n본문\t", wantEmpty: true},
+		{name: "title 만 비었다", content: "본문", want: []string{"title"}, notWant: []string{"content"}},
+		{name: "content 만 비었다", title: "제목", want: []string{"content"}, notWant: []string{"title"}},
+		{name: "둘 다 비었다", want: []string{"title", "content"}},
+		{name: "공백만 있는 값은 빈 것으로 본다", title: "  ", content: " \t\n", want: []string{"title", "content"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mcpMemoryFieldError(tc.title, tc.content)
+			if tc.wantEmpty {
+				if got != "" {
+					t.Fatalf("정상 값을 거부했다: %q", got)
+				}
+				return
+			}
+			if got == "" {
+				t.Fatal("빈 값을 통과시켰다")
+			}
+			for _, field := range tc.want {
+				if !strings.Contains(got, field) {
+					t.Fatalf("메시지가 빠진 필드 %q 를 말하지 않는다: %q", field, got)
+				}
+			}
+			for _, field := range tc.notWant {
+				if strings.Contains(got, field) {
+					t.Fatalf("메시지가 채워 보낸 필드 %q 까지 빠졌다고 말한다: %q", field, got)
+				}
+			}
+		})
+	}
+}
+
+// 두 가드의 순서는 계약이다. person_id 가 uuid 모양이 아니면서 title 도 비어
+// 있을 때, 먼저 말해야 하는 것은 person_id 다 — 모양이 어긋난 id 는 title 을
+// 채워 다시 불러도 여전히 실패하므로, 필드 메시지만 보면 모델이 한 번 더
+// 헛걸음한다. 새 가드를 mcpPersonIDError 뒤에 두면 그대로 성립한다.
+func TestMCPPersonIDGuardRunsBeforeMemoryFieldGuard(t *testing.T) {
+	args := map[string]any{"person_id": "not-a-uuid", "title": "", "content": ""}
+	rec, panicked := callWithoutStore((&Server{}).mcp, mcpToolCall(t, "orbit_create_memory", args))
+	if panicked {
+		t.Fatalf("질의까지 내려갔다 — 두 가드 모두 DB 앞에서 끝나야 한다")
+	}
+	result, text := mcpResultText(t, rec)
+	if result["isError"] != true {
+		t.Fatalf("isError = %v, want true: %v", result["isError"], result)
+	}
+	if !strings.Contains(text, "uuid") {
+		t.Fatalf("person_id 메시지가 먼저 나오지 않았다: %q", text)
+	}
+}
+
 // tools/list 가 person_id 의 모양을 알려주지 않으면 외부 에이전트는 사람 이름을
 // 넣어 보고 거절당하는 길을 먼저 밟는다. orbit_get_relationship 은 이미
 // format: uuid 이므로 나머지 두 도구를 같은 모양으로 맞춘다(설명은 이번에

@@ -236,6 +236,12 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 			s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": message}}}, nil)
 			return
 		}
+		// person_id 가드 뒤에 둔다. 모양이 어긋난 id 는 title 을 채워 다시 불러도
+		// 여전히 실패하므로, 둘이 함께 잘못됐을 때 먼저 말해야 하는 것은 person_id 다.
+		if message := mcpMemoryFieldError(args.Title, args.Content); message != "" {
+			s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": message}}}, nil)
+			return
+		}
 		result, err = s.mcpCreateMemory(r, u, args.PersonID, args.Title, args.Content, args.Topics)
 	default:
 		s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": "알 수 없는 도구입니다."}}}, nil)
@@ -281,6 +287,31 @@ func mcpPersonIDError(personID string, required bool) string {
 	return ""
 }
 
+// mcpMemoryFieldError는 orbit_create_memory의 필수 인자 중 무엇이 비었는지 보고,
+// 빠진 필드 이름을 담은 한국어 문장을 돌려준다(문제없으면 "").
+//
+// mcpCreateMemory는 둘 중 하나라도 비면 errors.New("title and content required")를
+// 돌려주는데, mcpCall의 오류 매핑은 pgx.ErrNoRows가 아닌 모든 오류를 "요청을
+// 처리하지 못했습니다." 한 문장으로 덮는다 — 호출한 모델은 무엇이 빠졌는지도,
+// 애초에 자기 잘못인지 서버 장애인지도 알 수 없어 스스로 고칠 수 없다. 빠진
+// 필드만 골라 말해 주면 그 자리를 채워 다시 부른다.
+//
+// 공백만 있는 값도 빈 것으로 본다 — mcpCreateMemory가 TrimSpace 뒤에 보므로
+// 여기서 같은 기준으로 판단해야 두 곳의 판정이 어긋나지 않는다.
+func mcpMemoryFieldError(title, content string) string {
+	missingTitle := strings.TrimSpace(title) == ""
+	missingContent := strings.TrimSpace(content) == ""
+	switch {
+	case missingTitle && missingContent:
+		return "title과 content가 비어 있습니다. 기억의 제목(title)과 본문(content)을 모두 넣으세요."
+	case missingTitle:
+		return "title이 비어 있습니다. 기억의 제목을 title에 넣으세요."
+	case missingContent:
+		return "content가 비어 있습니다. 기억의 본문을 content에 넣으세요."
+	}
+	return ""
+}
+
 func requestHasScope(r *http.Request, scope string) bool {
 	info, _ := r.Context().Value(authContextKey).(authInfo)
 	return !info.APIKey || info.Scopes[scope]
@@ -290,6 +321,11 @@ func (s *Server) mcpCreateMemory(r *http.Request, u User, personID, title, conte
 	topics = normalizeTags(topics)
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
+	// 이 검사는 이제 mcpCall 의 mcpMemoryFieldError 가드가 먼저 걸러내므로 실제로는
+	// 도달하지 않는다. 그래도 지우지 않는다 — 비어 있지 않은 title·content 는 이
+	// 함수의 사전조건이고, 두 번째 호출자가 생겼을 때 그 사전조건을 지켜 주는 것은
+	// 바깥 가드가 아니라 여기다. 도달하면 mcpCall 이 일반 메시지로 덮으므로, 호출자가
+	// 읽을 메시지를 만드는 책임은 바깥 가드에 있다.
 	if title == "" || content == "" {
 		return nil, errors.New("title and content required")
 	}
