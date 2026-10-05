@@ -113,8 +113,8 @@ func mcpTools() []map[string]any {
 	return []map[string]any{
 		{"name": "orbit_search_people", "description": "이름, 회사, 역할, 관계, 소속 카테고리로 내 Orbit의 사람을 검색합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"query": map[string]string{"type": "string", "description": "검색어"}}, "required": []string{"query"}}},
 		{"name": "orbit_get_relationship", "description": "특정 사람과의 관계, 궤도 상태, 이어진 사람들, 승인된 기억을 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string", "format": "uuid"}}, "required": []string{"person_id"}}},
-		{"name": "orbit_list_memories", "description": "내 관계 기억을 최신순으로 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string"}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}}},
-		{"name": "orbit_create_memory", "description": "새 관계 기억을 기록합니다. 관리자 설정에 따라 팀장 승인 대기가 될 수 있습니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string"}, "title": map[string]string{"type": "string"}, "content": map[string]string{"type": "string"}, "topics": map[string]any{"type": "array", "items": map[string]string{"type": "string"}}}, "required": []string{"title", "content"}}},
+		{"name": "orbit_list_memories", "description": "내 관계 기억을 최신순으로 조회합니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string", "format": "uuid", "description": "orbit_search_people가 돌려준 사람 id. 비우면 사람을 가리지 않은 전체 기억을 조회합니다."}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}}},
+		{"name": "orbit_create_memory", "description": "새 관계 기억을 기록합니다. 관리자 설정에 따라 팀장 승인 대기가 될 수 있습니다.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"person_id": map[string]string{"type": "string", "format": "uuid", "description": "orbit_search_people가 돌려준 사람 id. 비우면 사람에 묶이지 않은 기억으로 기록합니다."}, "title": map[string]string{"type": "string"}, "content": map[string]string{"type": "string"}, "topics": map[string]any{"type": "array", "items": map[string]string{"type": "string"}}}, "required": []string{"title", "content"}}},
 	}
 }
 
@@ -171,6 +171,10 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 			PersonID string `json:"person_id"`
 		}
 		_ = json.Unmarshal(call.Arguments, &args)
+		if message := mcpPersonIDError(args.PersonID, true); message != "" {
+			s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": message}}}, nil)
+			return
+		}
 		var name, label string
 		var importance, closeness, momentum float64
 		var last *time.Time
@@ -204,6 +208,10 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 			Limit    int    `json:"limit"`
 		}
 		_ = json.Unmarshal(call.Arguments, &args)
+		if message := mcpPersonIDError(args.PersonID, false); message != "" {
+			s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": message}}}, nil)
+			return
+		}
 		if args.Limit <= 0 || args.Limit > 100 {
 			args.Limit = 30
 		}
@@ -224,6 +232,10 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 			Topics   []string `json:"topics"`
 		}
 		_ = json.Unmarshal(call.Arguments, &args)
+		if message := mcpPersonIDError(args.PersonID, false); message != "" {
+			s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": message}}}, nil)
+			return
+		}
 		result, err = s.mcpCreateMemory(r, u, args.PersonID, args.Title, args.Content, args.Topics)
 	default:
 		s.rpcWrite(w, req.ID, map[string]any{"isError": true, "content": []map[string]string{{"type": "text", "text": "알 수 없는 도구입니다."}}}, nil)
@@ -241,6 +253,34 @@ func (s *Server) mcpCall(w http.ResponseWriter, r *http.Request, req rpcRequest)
 	s.rpcWrite(w, req.ID, map[string]any{"content": []map[string]string{{"type": "text", "text": string(raw)}}, "structuredContent": result}, nil)
 }
 
+// mcpPersonIDError는 person_id가 uuid 컬럼에 닿아도 되는 모양인지 보고, 아니면
+// 외부 에이전트가 읽고 스스로 고칠 수 있는 한국어 문장을 돌려준다(문제없으면 "").
+//
+// 세 도구는 이 값을 uuid 컬럼에 그대로 넘긴다 — orbit_get_relationship의 p.id=$2,
+// queryMemories의 NULLIF($2, 빈 문자열)::uuid, mcpCreateMemory의 WHERE id=$1. 모양이
+// 어긋난 값이 DB까지 가면 postgres가 22P02를 내는데 그것은 pgx.ErrNoRows가
+// 아니므로 mcpCall의 오류 매핑이 "요청을 처리하지 못했습니다." 한 문장으로 덮고,
+// 호출한 모델은 사람 이름을 id 자리에 넣었다는 것을 알 길이 없다. 무엇이
+// 잘못됐는지 말해 주면 orbit_search_people로 id를 먼저 찾는 식으로 스스로 고친다.
+//
+// 빈 값의 뜻이 도구마다 다르므로 required로 가른다 — orbit_get_relationship은
+// 사람을 반드시 가리켜야 하고(required: ["person_id"]), orbit_list_memories의 빈
+// 값은 "사람을 가리지 않는 전체 목록", orbit_create_memory의 빈 값은 "사람 없는
+// 기억"이라는 지금 돌고 있는 기능이다. 모양 판단은 looksLikeUUID에 맡긴다 —
+// 대문자 16진수는 postgres가 같은 id로 읽으므로 통과시켜야 한다.
+func mcpPersonIDError(personID string, required bool) string {
+	if personID == "" {
+		if required {
+			return "person_id가 필요합니다. orbit_search_people로 사람의 id를 먼저 찾아 그 값을 넘기세요."
+		}
+		return ""
+	}
+	if !looksLikeUUID(personID) {
+		return "person_id가 uuid 모양(8-4-4-4-12 자리 16진수)이 아닙니다. 사람 이름이 아니라 orbit_search_people이 돌려준 id를 넘기세요."
+	}
+	return ""
+}
+
 func requestHasScope(r *http.Request, scope string) bool {
 	info, _ := r.Context().Value(authContextKey).(authInfo)
 	return !info.APIKey || info.Scopes[scope]
@@ -255,7 +295,13 @@ func (s *Server) mcpCreateMemory(r *http.Request, u User, personID, title, conte
 	}
 	if personID != "" {
 		var exists bool
-		if err := s.store.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM people WHERE id=$1 AND user_id=$2)`, personID, u.ID).Scan(&exists); err != nil || !exists {
+		// 조회가 실패한 것과 그런 사람이 없는 것을 한 묶음으로 보면 DB 장애까지
+		// "대상을 찾을 수 없습니다."로 나가 원인이 사라진다. 오류는 그대로 올려
+		// 일반 메시지가 되게 하고, ErrNoRows는 사람이 없을 때만 돌려준다.
+		if err := s.store.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM people WHERE id=$1 AND user_id=$2)`, personID, u.ID).Scan(&exists); err != nil {
+			return nil, err
+		}
+		if !exists {
 			return nil, pgx.ErrNoRows
 		}
 	}

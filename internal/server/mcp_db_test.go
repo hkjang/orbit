@@ -152,6 +152,117 @@ func TestMCPSearchPeopleBrokenRowStream(t *testing.T) {
 	})
 }
 
+// breakPeopleUserIDLookup 은 mcpCreateMemory 의 사람 존재 확인 질의
+// (SELECT EXISTS … WHERE id=$1 AND user_id=$2)가 실패하는 상황을 결정적으로
+// 만든다. breakPeopleRowStream 처럼 display_name 을 깨뜨리면 플래너가 그 식을
+// 가지치기해 이 질의는 멀쩡히 성공한다(실제 postgres 로 확인: exists=true,
+// err=nil). 그래서 질의가 반드시 읽는 user_id 를 깨뜨린다 — WHERE 절에 쓰이므로
+// 'boom…' 사람에 닿는 순간 22P02 가 나고 Scan 이 오류를 돌려준다.
+//
+// 프로덕션 질의는 한 글자도 바꾸지 않는다. 뷰의 SELECT 목록은 001_init.sql:73~87
+// 의 13개 컬럼을 순서대로 지키고, t.Cleanup 으로 반드시 원복한다.
+func breakPeopleUserIDLookup(t *testing.T, st *store.Store) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := st.DB.Exec(ctx, `ALTER TABLE people RENAME TO people_probe`); err != nil {
+		t.Fatalf("rename people: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := st.DB.Exec(ctx, `DROP VIEW IF EXISTS people`); err != nil {
+			t.Fatalf("drop probe view: %v", err)
+		}
+		if _, err := st.DB.Exec(ctx, `ALTER TABLE people_probe RENAME TO people`); err != nil {
+			t.Fatalf("restore people: %v", err)
+		}
+	})
+	if _, err := st.DB.Exec(ctx, `CREATE VIEW people AS SELECT id,
+		CASE WHEN display_name LIKE 'boom%' THEN (display_name::int)::text::uuid ELSE user_id END AS user_id,
+		display_name, company, role_title, avatar_url, email_cipher, phone_cipher, note_cipher,
+		key_version, first_met, created_at, updated_at FROM people_probe`); err != nil {
+		t.Fatalf("create probe view: %v", err)
+	}
+}
+
+// TestMCPCreateMemorySeparatesLookupFailureFromMissingPerson 은 mcpCreateMemory 가
+// "조회가 실패했다" 와 "그런 사람이 없다" 를 섞지 않는지 고정한다. 두 경우를
+// 한 묶음으로 pgx.ErrNoRows 로 돌려주면 DB 장애까지 "대상을 찾을 수 없습니다."
+// 로 보여 원인이 사라지고, 외부 에이전트는 사람을 다시 찾으면 될 일이라고
+// 오해한다.
+func TestMCPCreateMemorySeparatesLookupFailureFromMissingPerson(t *testing.T) {
+	st := openTestStore(t)
+	userID := seedUser(t, st)
+	boomID := seedNamedPerson(t, st, userID, "boom-"+id.New()[:8])
+
+	// 먼저 "정말 없는 사람". 모양은 맞지만 심지 않은 id 이므로 가드를 지나
+	// 존재 확인 질의까지 가고, 없으므로 기존 "대상을 찾을 수 없습니다." 가 된다.
+	t.Run("없는 사람은 대상을 찾을 수 없습니다", func(t *testing.T) {
+		status, result := callCreateMemory(t, st, userID, id.New())
+		if status != 200 {
+			t.Fatalf("status = %d, want 200; result = %v", status, result)
+		}
+		if result["isError"] != true {
+			t.Fatalf("isError = %v, want true: %v", result["isError"], result)
+		}
+		if text := mcpContentText(result); text != "대상을 찾을 수 없습니다." {
+			t.Fatalf("content[0].text = %q, want 기존 부재 메시지", text)
+		}
+	})
+
+	breakPeopleUserIDLookup(t, st)
+
+	t.Run("조회가 실패하면 일반 메시지가 된다", func(t *testing.T) {
+		status, result := callCreateMemory(t, st, userID, boomID)
+		if status != 200 {
+			t.Fatalf("status = %d, want 200; result = %v", status, result)
+		}
+		if result["isError"] != true {
+			t.Fatalf("isError = %v, want true: %v", result["isError"], result)
+		}
+		if text := mcpContentText(result); text != "요청을 처리하지 못했습니다." {
+			t.Fatalf("content[0].text = %q — DB 장애가 사람 부재로 보인다", text)
+		}
+	})
+}
+
+// callCreateMemory 는 callSearchPeople 과 같은 프로덕션 배선으로 orbit_create_memory
+// 를 부른다. title·content 는 person_id 검사 앞에서 걸리지 않게 채워 둔다.
+func callCreateMemory(t *testing.T, st *store.Store, userID, personID string) (int, map[string]any) {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "orbit_create_memory", "arguments": map[string]any{
+			"person_id": personID, "title": "시험 제목", "content": "시험 본문",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), userContextKey, User{ID: userID}))
+
+	rec := httptest.NewRecorder()
+	(&Server{store: st}).mcp(rec, req)
+
+	var envelope struct {
+		Result map[string]any `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("응답이 JSON-RPC 봉투가 아니다 (status=%d): %s", rec.Code, rec.Body.String())
+	}
+	return rec.Code, envelope.Result
+}
+
+func mcpContentText(result map[string]any) string {
+	content, _ := result["content"].([]any)
+	if len(content) == 0 {
+		return ""
+	}
+	first, _ := content[0].(map[string]any)
+	text, _ := first["text"].(string)
+	return text
+}
+
 // TestMCPSearchPeopleProbeRestoresSchema 는 위 시험의 뷰 DDL 이 원복됐는지
 // 확인한다 — 원복되지 않으면 같은 컨테이너의 다른 DB 시험이 전부 깨진다.
 // 같은 파일의 시험이 t.Cleanup 으로 되돌리므로 go test 의 파일 내 순차 실행에
