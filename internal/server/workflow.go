@@ -70,9 +70,22 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	if in.SourceType == "" {
 		in.SourceType = "manual"
 	}
+	// 빈 person_id는 "사람 없는 기억"이라는 뜻이므로 가드도 이 블록 안에 둔다.
 	if in.PersonID != "" {
+		if !looksLikeUUID(in.PersonID) {
+			writeError(w, 400, "invalid_person", "관계 인물을 확인해 주세요.")
+			return
+		}
 		var exists bool
-		if err := s.store.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM people WHERE id=$1 AND user_id=$2)`, in.PersonID, u.ID).Scan(&exists); err != nil || !exists {
+		// 조회가 실패한 것과 그런 사람이 없는 것을 한 묶음으로 보면 DB 장애까지
+		// "관계 인물을 확인해 주세요."로 나가 원인이 사라진다 — internalError를
+		// 지나지 않으므로 서버 로그에도 한 줄도 남지 않는다. 오류는 그대로 올려
+		// 500으로 나가게 하고, 400은 사람이 없을 때만 돌려준다.
+		if err := s.store.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM people WHERE id=$1 AND user_id=$2)`, in.PersonID, u.ID).Scan(&exists); err != nil {
+			internalError(w, r, err)
+			return
+		}
+		if !exists {
 			writeError(w, 400, "invalid_person", "관계 인물을 확인해 주세요.")
 			return
 		}
