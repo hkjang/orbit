@@ -501,8 +501,20 @@ func (s *Server) createInteraction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "validation_error", err.Error())
 		return
 	}
+	if !looksLikeUUID(personID) {
+		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
+		return
+	}
 	var exists bool
-	if err := s.store.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM people WHERE id=$1 AND user_id=$2)`, personID, u.ID).Scan(&exists); err != nil || !exists {
+	// 조회가 실패한 것과 그런 사람이 없는 것을 한 묶음으로 보면 DB 장애까지
+	// "사람을 찾을 수 없습니다."로 나가 원인이 사라진다 — internalError를
+	// 지나지 않으므로 서버 로그에도 한 줄도 남지 않는다. 오류는 그대로 올려
+	// 500으로 나가게 하고, 404는 사람이 없을 때만 돌려준다.
+	if err := s.store.DB.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM people WHERE id=$1 AND user_id=$2)`, personID, u.ID).Scan(&exists); err != nil {
+		internalError(w, r, err)
+		return
+	}
+	if !exists {
 		writeError(w, 404, "not_found", "사람을 찾을 수 없습니다.")
 		return
 	}
