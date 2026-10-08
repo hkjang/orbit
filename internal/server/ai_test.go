@@ -4,12 +4,104 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
+
+func TestProxyAIStreamFraming(t *testing.T) {
+	cases := []struct {
+		name, input, want string
+	}{
+		{
+			name:  "여러 data 줄은 delta 하나로 합쳐진다",
+			input: "event: response.output_text.delta\ndata: {\"delta\":\ndata: \"안녕\"}\n\n",
+			want:  "event: delta\ndata: {\"text\":\"안녕\"}\n\n",
+		},
+		{
+			name: "연속 프레임은 순서대로 한 번씩 나온다",
+			input: "event: response.output_text.delta\ndata: {\"delta\":\"안녕\"}\n\n" +
+				"event: response.output_text.delta\ndata: {\"delta\":\"하세요\"}\n\n",
+			want: "event: delta\ndata: {\"text\":\"안녕\"}\n\n" +
+				"event: delta\ndata: {\"text\":\"하세요\"}\n\n",
+		},
+		{
+			name: "빈 줄에서 이벤트 이름이 초기화된다",
+			input: "event: response.output_text.delta\ndata: {\"delta\":\"안녕\"}\n\n" +
+				"data: {\"delta\":\"나오면 안 됨\"}\n\n",
+			want: "event: delta\ndata: {\"text\":\"안녕\"}\n\n",
+		},
+		{
+			// SSE 표준의 해석을 바꾸지 않고 Orbit의 기존 EOF flush를 고정한다.
+			name:  "마지막 줄바꿈 없는 프레임은 EOF에서 한 번 나온다",
+			input: "event: response.output_text.delta\ndata: {\"delta\":\"안녕\"}",
+			want:  "event: delta\ndata: {\"text\":\"안녕\"}\n\n",
+		},
+		{
+			name: "주석과 추가 빈 줄은 delta를 만들지 않는다",
+			input: ": ping\n\n\n" +
+				"event: response.output_text.delta\n: ping\ndata: {\"delta\":\"안녕\"}\n\n\n: ping\n\n",
+			want: "event: delta\ndata: {\"text\":\"안녕\"}\n\n",
+		},
+		{
+			name: "DONE을 무시하고 다음 프레임을 읽는다",
+			input: "data: [DONE]\n\n" +
+				"event: response.output_text.delta\ndata: {\"delta\":\"안녕\"}\n\n",
+			want: "event: delta\ndata: {\"text\":\"안녕\"}\n\n",
+		},
+		{
+			name: "잘못된 JSON을 무시하고 다음 프레임을 읽는다",
+			input: "event: response.output_text.delta\ndata: {\"delta\":\n\n" +
+				"event: response.output_text.delta\ndata: {\"delta\":\"안녕\"}\n\n",
+			want: "event: delta\ndata: {\"text\":\"안녕\"}\n\n",
+		},
+		{
+			name:  "DONE만 있으면 출력이 없다",
+			input: "data: [DONE]\n\n",
+			want:  "",
+		},
+		{
+			name:  "EOF의 DONE만 있으면 출력이 없다",
+			input: "data: [DONE]",
+			want:  "",
+		},
+	}
+	for _, newline := range []struct{ name, value string }{{"LF", "\n"}, {"CRLF", "\r\n"}} {
+		t.Run(newline.name, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					input := strings.ReplaceAll(tc.input, "\n", newline.value)
+					provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if r.Method != http.MethodPost || r.URL.Path != "/v1/responses" {
+							t.Errorf("provider request: %s %s", r.Method, r.URL.Path)
+							w.WriteHeader(http.StatusBadRequest)
+							return
+						}
+						w.Header().Set("Content-Type", "text/event-stream")
+						if _, err := io.WriteString(w, input); err != nil {
+							t.Errorf("write provider stream: %v", err)
+							return
+						}
+					}))
+					defer provider.Close()
+
+					recorder := httptest.NewRecorder()
+					err := (&Server{}).proxyAIStream(t.Context(), recorder, recorder,
+						AISettings{BaseURL: provider.URL, Model: "test", RequestTimeoutSeconds: 5}, "질문", "기록", 32)
+					if err != nil {
+						t.Fatalf("proxyAIStream: %v", err)
+					}
+					if got := recorder.Body.String(); got != tc.want {
+						t.Fatalf("normalized stream = %q, want %q", got, tc.want)
+					}
+				})
+			}
+		})
+	}
+}
 
 func streamAIRequest(personID string) *http.Request {
 	body, err := json.Marshal(map[string]any{"prompt": "요즘 소원해진 사람이 있나요?", "person_id": personID})
