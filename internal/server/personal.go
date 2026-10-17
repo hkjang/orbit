@@ -339,6 +339,11 @@ func (s *Server) createAPIKey(w http.ResponseWriter, r *http.Request) {
 func (s *Server) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	u := userFromContext(r.Context())
 	keyID := chi.URLParam(r, "keyID")
+	// api_keys.id도 uuid 컬럼(001_init.sql)이라 같은 가드가 필요하다.
+	if !looksLikeUUID(keyID) {
+		writeError(w, 404, "not_found", "활성 API 키를 찾을 수 없습니다.")
+		return
+	}
 	tag, err := s.store.DB.Exec(r.Context(), `UPDATE api_keys SET revoked_at=now() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, keyID, u.ID)
 	if err != nil {
 		internalError(w, r, err)
